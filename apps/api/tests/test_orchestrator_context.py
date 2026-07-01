@@ -12,9 +12,14 @@ from app.models.character import Character, CharacterProfile, CharacterState
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.user import User
+from app.config import Settings
+from app.providers.llm_factory import get_llm_provider
+from app.providers.llm_mock import generate_reply
 from app.services.character_engine import update_state_after_message
+from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
 from app.services.orchestrator_context import build_orchestrator_context
+from app.services.prompt_builder import build_provider_prompt
 
 
 class OrchestratorContextTestCase(unittest.TestCase):
@@ -187,6 +192,45 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(set(payload["memory"].keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
+
+    def test_mock_provider_can_be_called_through_provider_interface(self) -> None:
+        self.add_context_records()
+        context = build_orchestrator_context(self.db, self.character, "How are you?")
+
+        provider_reply = get_llm_provider("mock").generate_reply(context)
+        legacy_reply = generate_reply(self.character, context.current_user_message, context.recent_messages)
+
+        self.assertEqual(provider_reply, legacy_reply)
+
+    def test_prompt_builder_includes_key_context_fields(self) -> None:
+        self.add_context_records()
+        context = build_orchestrator_context(self.db, self.character, "current test message")
+
+        prompt = build_provider_prompt(context)
+
+        self.assertIn("Character: Alice", prompt.system)
+        self.assertIn("Relationship mode: friend", prompt.system)
+        self.assertIn("personality_description: Warm and thoughtful", prompt.system)
+        self.assertIn("communication_style: Gentle, concise", prompt.system)
+        self.assertIn("boundaries: No medical advice", prompt.system)
+        self.assertIn("mood: curious", prompt.system)
+        self.assertIn("trust: 21", prompt.system)
+        self.assertIn("preference:", prompt.system)
+        self.assertIn("- likes tea", prompt.system)
+        self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_config_defaults_to_mock_provider(self) -> None:
+        self.assertEqual(Settings.model_fields["llm_provider"].default, "mock")
+        self.assertEqual(get_llm_provider("mock").name, "mock")
+
+    def test_chat_flow_returns_mock_reply_through_provider_interface(self) -> None:
+        reply, assistant_message = handle_chat_message(self.db, self.character, "I am testing chat flow")
+
+        self.assertEqual(reply, assistant_message.content)
+        self.assertTrue(reply)
+        messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
+        self.assertEqual([message.role for message in messages], ["user", "assistant"])
+        self.assertEqual(self.character.state.mood, "attentive")
 
 
 if __name__ == "__main__":
