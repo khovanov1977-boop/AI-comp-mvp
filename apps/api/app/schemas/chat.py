@@ -31,3 +31,19 @@ class MessageRead(BaseModel):
     content: str
     message_type: str
     created_at: datetime
+
+
+class MemoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    character_id: str
+    memory_type: str
+    content: str
+    importance: int
+    created_at: datetime
+
+
+class CompanionContextRead(BaseModel):
+    character_state: CharacterStateRead
+    memories: list[MemoryRead]

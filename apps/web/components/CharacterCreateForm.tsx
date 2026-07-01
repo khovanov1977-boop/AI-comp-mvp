@@ -11,7 +11,12 @@ const initialForm: CharacterCreateInput = {
   personality_description: "",
   communication_style: "warm and thoughtful",
   background_story: "",
+  biography: "",
   boundaries: "",
+  likes: "",
+  dislikes: "",
+  language: "ru",
+  user_nickname: "",
 };
 
 export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
@@ -84,16 +89,39 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
         />
       </label>
       <label className="field">
-        <span className="label">Background story</span>
+        <span className="label">Biography</span>
         <textarea
           className="textarea"
-          value={form.background_story}
-          onChange={(event) => update("background_story", event.target.value)}
+          value={form.biography}
+          onChange={(event) => update("biography", event.target.value)}
         />
       </label>
       <label className="field">
         <span className="label">Boundaries</span>
         <textarea className="textarea" value={form.boundaries} onChange={(event) => update("boundaries", event.target.value)} />
+      </label>
+      <label className="field">
+        <span className="label">Likes</span>
+        <textarea className="textarea" value={form.likes} onChange={(event) => update("likes", event.target.value)} />
+      </label>
+      <label className="field">
+        <span className="label">Dislikes</span>
+        <textarea className="textarea" value={form.dislikes} onChange={(event) => update("dislikes", event.target.value)} />
+      </label>
+      <label className="field">
+        <span className="label">Language</span>
+        <select className="select" value={form.language} onChange={(event) => update("language", event.target.value)}>
+          <option value="ru">Russian</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <label className="field">
+        <span className="label">User nickname</span>
+        <input
+          className="input"
+          value={form.user_nickname}
+          onChange={(event) => update("user_nickname", event.target.value)}
+        />
       </label>
       {error ? <p className="muted">{error}</p> : null}
       <button className="button" type="submit" disabled={isSaving}>

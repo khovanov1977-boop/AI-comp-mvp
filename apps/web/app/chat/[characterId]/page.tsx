@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { ChatWindow } from "../../../components/ChatWindow";
-import { MediaPanel } from "../../../components/MediaPanel";
+import { ChatWorkspace } from "../../../components/ChatWorkspace";
 import { getCharacter } from "../../../lib/api";
 
 export default async function ChatPage({ params }: { params: Promise<{ characterId: string }> }) {
@@ -21,10 +20,7 @@ export default async function ChatPage({ params }: { params: Promise<{ character
         </nav>
       </div>
 
-      <div className="chat-layout">
-        <ChatWindow characterId={characterId} />
-        <MediaPanel />
-      </div>
+      <ChatWorkspace character={character} />
     </main>
   );
 }

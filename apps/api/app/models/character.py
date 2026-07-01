@@ -31,7 +31,12 @@ class CharacterProfile(Base):
     personality_description: Mapped[str] = mapped_column(Text, default="")
     communication_style: Mapped[str] = mapped_column(Text, default="")
     background_story: Mapped[str] = mapped_column(Text, default="")
+    biography: Mapped[str] = mapped_column(Text, default="")
     boundaries: Mapped[str] = mapped_column(Text, default="")
+    likes: Mapped[str] = mapped_column(Text, default="")
+    dislikes: Mapped[str] = mapped_column(Text, default="")
+    language: Mapped[str] = mapped_column(String, default="ru")
+    user_nickname: Mapped[str] = mapped_column(String, default="")
     voice_id: Mapped[str] = mapped_column(String, default="mock-voice")
 
     character = relationship("Character", back_populates="profile")

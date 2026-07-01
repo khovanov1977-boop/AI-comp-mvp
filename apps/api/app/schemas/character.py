@@ -10,7 +10,12 @@ class CharacterCreate(BaseModel):
     personality_description: str = ""
     communication_style: str = ""
     background_story: str = ""
+    biography: str = ""
     boundaries: str = ""
+    likes: str = ""
+    dislikes: str = ""
+    language: str = "ru"
+    user_nickname: str = ""
 
 
 class CharacterRead(BaseModel):
@@ -23,5 +28,10 @@ class CharacterRead(BaseModel):
     personality_description: str
     communication_style: str
     background_story: str
+    biography: str
     boundaries: str
+    likes: str
+    dislikes: str
+    language: str
+    user_nickname: str
     created_at: datetime

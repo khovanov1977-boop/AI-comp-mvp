@@ -1,4 +1,4 @@
-import type { Character, ChatMessage } from "@ai-companion/shared";
+import type { Character, ChatMessage, CompanionContext, Memory } from "@ai-companion/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -26,7 +26,12 @@ export type CharacterCreateInput = {
   personality_description: string;
   communication_style: string;
   background_story: string;
+  biography: string;
   boundaries: string;
+  likes: string;
+  dislikes: string;
+  language: string;
+  user_nickname: string;
 };
 
 export function listCharacters() {
@@ -48,9 +53,31 @@ export function getChatHistory(characterId: string) {
   return request<ChatMessage[]>(`/chat/${characterId}`);
 }
 
+export function getCompanionContext(characterId: string) {
+  return request<CompanionContext>(`/chat/${characterId}/context`);
+}
+
 export function sendChatMessage(characterId: string, message: string) {
-  return request<{ reply: string }>("/chat", {
+  return request<{ reply: string; character_state: CompanionContext["character_state"] }>("/chat", {
     method: "POST",
     body: JSON.stringify({ character_id: characterId, message }),
+  });
+}
+
+export function createMemory(input: {
+  character_id: string;
+  memory_type: Memory["memory_type"];
+  content: string;
+  importance?: number;
+}) {
+  return request<Memory>("/memories", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteMemory(memoryId: string) {
+  return request<{ status: string }>(`/memories/${memoryId}`, {
+    method: "DELETE",
   });
 }

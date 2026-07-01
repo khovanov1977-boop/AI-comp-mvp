@@ -6,7 +6,7 @@ import type { ChatMessage } from "@ai-companion/shared";
 import { getChatHistory, sendChatMessage } from "../lib/api";
 import { MessageBubble } from "./MessageBubble";
 
-export function ChatWindow({ characterId }: { characterId: string }) {
+export function ChatWindow({ characterId, onAfterSend }: { characterId: string; onAfterSend?: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -39,6 +39,7 @@ export function ChatWindow({ characterId }: { characterId: string }) {
     try {
       await sendChatMessage(characterId, text);
       await loadHistory();
+      onAfterSend?.();
     } catch {
       setError("Could not send message. Check that the backend is running.");
     } finally {

@@ -33,7 +33,12 @@ def to_character_read(character: Character) -> CharacterRead:
         personality_description=profile.personality_description if profile else "",
         communication_style=profile.communication_style if profile else "",
         background_story=profile.background_story if profile else "",
+        biography=(profile.biography or profile.background_story) if profile else "",
         boundaries=profile.boundaries if profile else "",
+        likes=profile.likes if profile else "",
+        dislikes=profile.dislikes if profile else "",
+        language=profile.language if profile else "ru",
+        user_nickname=profile.user_nickname if profile else "",
         created_at=character.created_at,
     )
 
@@ -50,8 +55,13 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
     character.profile = CharacterProfile(
         personality_description=payload.personality_description,
         communication_style=payload.communication_style,
-        background_story=payload.background_story,
+        background_story=payload.background_story or payload.biography,
+        biography=payload.biography or payload.background_story,
         boundaries=payload.boundaries,
+        likes=payload.likes,
+        dislikes=payload.dislikes,
+        language=payload.language,
+        user_nickname=payload.user_nickname,
     )
     character.state = CharacterState()
     db.add(character)

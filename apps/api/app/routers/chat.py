@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.character import Character
 from app.models.message import Message
-from app.schemas.chat import ChatRequest, ChatResponse, CharacterStateRead, MessageRead
+from app.schemas.chat import ChatRequest, ChatResponse, CharacterStateRead, CompanionContextRead, MessageRead
+from app.services.memory_service import list_character_memories
 from app.services.orchestrator import handle_chat_message
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -23,6 +24,24 @@ def get_chat_history(character_id: str, db: Session = Depends(get_db)) -> list[M
             .where(Message.character_id == character_id)
             .order_by(Message.created_at.asc())
         )
+    )
+
+
+@router.get("/{character_id}/context", response_model=CompanionContextRead)
+def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> CompanionContextRead:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    state = character.state
+    return CompanionContextRead(
+        character_state=CharacterStateRead(
+            mood=state.mood,
+            trust_level=state.trust_level,
+            attachment_level=state.attachment_level,
+            energy_level=state.energy_level,
+        ),
+        memories=list_character_memories(db, character_id),
     )
 
 
