@@ -18,7 +18,8 @@ class ProviderPrompt:
 def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     profile = context.profile
     state = context.state
-    user_name = profile.user_nickname or "the user"
+    user_context = context.user_context
+    user_name = profile.user_nickname or user_context.display_name or "the user"
     memory_lines = []
     for category, memories in context.memory.items():
         if not memories:
@@ -34,6 +35,18 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- user_name: {user_name}",
         f"- relationship_mode: {context.relationship_mode}",
         f"- language: {profile.language}",
+        "User context:",
+        f"- user_display_name: {user_context.display_name}",
+        f"- user_city: {user_context.city}",
+        f"- user_country: {user_context.country}",
+        f"- user_timezone: {user_context.timezone}",
+        f"- user_language: {user_context.language}",
+        f"- exact_current_user_local_datetime_already_computed: {user_context.local_datetime_iso}",
+        f"- exact_current_user_local_date: {user_context.local_date}",
+        f"- exact_current_user_local_time: {user_context.local_time}",
+        f"- current_user_weekday: {user_context.weekday}",
+        f"- current_user_time_of_day: {user_context.time_of_day}",
+        f"- current_user_daylight_context: {user_context.daylight_context}",
         "Persona profile:",
         f"- personality_description: {profile.personality_description}",
         f"- communication_style: {profile.communication_style}",
@@ -55,6 +68,13 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- If the recent conversation corrects the user's name, pronouns, gender, or situation, obey the correction over profile or memory.",
         "- If you are unsure about the user's name or gender, avoid gendered wording or ask naturally.",
         "- Use the grammatical gender that matches character_gender, especially in Russian and other gendered languages.",
+        "- Treat the current date, weekday, and time as the user's local reality.",
+        "- The local date/time is already computed for the user's timezone. Do not add or subtract the timezone offset again.",
+        "- If asked what time it is, answer with exact_current_user_local_time directly. Do not estimate, round, or shift it by a few minutes.",
+        "- Use current_user_time_of_day and current_user_daylight_context when suggesting plans, actions, scenery, or atmosphere.",
+        "- Do not suggest sunset, daylight walks, morning routines, or open venues when they contradict the current local time context.",
+        "- Unless a different character city or timezone is explicitly stated, assume the character shares the user's city and timezone.",
+        "- If the conversation establishes that character and user are in different cities, do not suggest immediate in-person activities together.",
         "- Reply naturally in the user's language unless the user asks otherwise.",
         "- Do not mechanically repeat or paraphrase the user's last sentence.",
         "- Do not recite profile, memory, state, or system fields. Use them quietly to shape the reply.",

@@ -38,6 +38,7 @@ export function CompanionPanel({
   onMemoryChange: () => void;
 }) {
   const state = context?.character_state;
+  const userContext = context?.user_context;
   const memories = context?.memories ?? [];
   const [memoryType, setMemoryType] = useState<Memory["memory_type"]>("user_fact");
   const [memoryContent, setMemoryContent] = useState("");
@@ -107,6 +108,32 @@ export function CompanionPanel({
           </>
         ) : (
           <p className="muted">Loading state...</p>
+        )}
+      </section>
+
+      <section className="stack">
+        <h2 className="panel-title">User context</h2>
+        {userContext ? (
+          <div className="context-list">
+            <div>
+              <span>Name</span>
+              <strong>{userContext.display_name || character.user_nickname || "Not set"}</strong>
+            </div>
+            <div>
+              <span>Location</span>
+              <strong>{[userContext.city, userContext.country].filter(Boolean).join(", ") || "Not set"}</strong>
+            </div>
+            <div>
+              <span>Timezone</span>
+              <strong>{userContext.timezone}</strong>
+            </div>
+            <div>
+              <span>Language</span>
+              <strong>{userContext.language}</strong>
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading user context...</p>
         )}
       </section>
 

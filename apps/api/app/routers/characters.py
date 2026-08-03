@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models.character import Character, CharacterProfile, CharacterState
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead
+from app.services.time_context import infer_timezone
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 
@@ -25,6 +26,7 @@ def get_or_create_demo_user(db: Session) -> User:
 
 def to_character_read(character: Character) -> CharacterRead:
     profile = character.profile
+    user = character.user
     return CharacterRead(
         id=character.id,
         name=character.name,
@@ -39,6 +41,10 @@ def to_character_read(character: Character) -> CharacterRead:
         dislikes=profile.dislikes if profile else "",
         language=profile.language if profile else "ru",
         user_nickname=profile.user_nickname if profile else "",
+        user_city=user.city if user else "",
+        user_country=user.country if user else "",
+        user_timezone=user.timezone if user else "Europe/Moscow",
+        user_language=user.language if user else "ru",
         created_at=character.created_at,
     )
 
@@ -46,6 +52,12 @@ def to_character_read(character: Character) -> CharacterRead:
 @router.post("", response_model=CharacterRead)
 def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) -> CharacterRead:
     user = get_or_create_demo_user(db)
+    user.city = payload.user_city.strip()
+    user.country = payload.user_country.strip()
+    user.timezone = infer_timezone(user.city, user.country, payload.user_timezone.strip() or "Europe/Moscow")
+    user.language = payload.user_language.strip() or payload.language
+    if payload.user_nickname.strip():
+        user.display_name = payload.user_nickname.strip()
     character = Character(
         user_id=user.id,
         name=payload.name,

@@ -39,6 +39,10 @@ export type CharacterCreateInput = {
   dislikes: string;
   language: string;
   user_nickname: string;
+  user_city: string;
+  user_country: string;
+  user_timezone: string;
+  user_language: string;
 };
 
 export function listCharacters() {

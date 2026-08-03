@@ -22,6 +22,7 @@ from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
+from app.services.time_context import describe_daylight_context, describe_time_of_day, infer_timezone
 
 
 class OrchestratorContextTestCase(unittest.TestCase):
@@ -42,7 +43,14 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.engine.dispose()
 
     def create_character(self) -> Character:
-        user = User(email="test@example.com", display_name="Test User")
+        user = User(
+            email="test@example.com",
+            display_name="Tester",
+            city="Moscow",
+            country="Russia",
+            timezone="Europe/Moscow",
+            language="ru",
+        )
         character = Character(
             user=user,
             name="Alice",
@@ -117,6 +125,17 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.state.trust, 21)
         self.assertEqual(context.state.attachment, 13)
         self.assertEqual(context.state.energy, 74)
+        self.assertEqual(context.user_context.display_name, "Tester")
+        self.assertEqual(context.user_context.city, "Moscow")
+        self.assertEqual(context.user_context.country, "Russia")
+        self.assertEqual(context.user_context.timezone, "Europe/Moscow")
+        self.assertEqual(context.user_context.language, "ru")
+        self.assertTrue(context.user_context.local_date)
+        self.assertTrue(context.user_context.local_time)
+        self.assertTrue(context.user_context.local_datetime_iso)
+        self.assertTrue(context.user_context.weekday)
+        self.assertTrue(context.user_context.time_of_day)
+        self.assertTrue(context.user_context.daylight_context)
         self.assertEqual(set(context.memory.keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(context.memory["preference"][0].content, "likes tea")
         self.assertEqual([message.content for message in context.recent_messages], ["hello", "hi"])
@@ -192,6 +211,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["relationship_mode"], "friend")
         self.assertEqual(payload["profile"]["personality_description"], "Warm and thoughtful")
         self.assertEqual(payload["state"]["mood"], "curious")
+        self.assertEqual(payload["user_context"]["city"], "Moscow")
+        self.assertEqual(payload["user_context"]["timezone"], "Europe/Moscow")
         self.assertEqual(set(payload["memory"].keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
@@ -215,6 +236,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("character_gender: female", prompt.system)
         self.assertIn("user_name: Tester", prompt.system)
         self.assertIn("relationship_mode: friend", prompt.system)
+        self.assertIn("user_city: Moscow", prompt.system)
+        self.assertIn("user_country: Russia", prompt.system)
+        self.assertIn("user_timezone: Europe/Moscow", prompt.system)
+        self.assertIn("exact_current_user_local_date:", prompt.system)
+        self.assertIn("current_user_weekday:", prompt.system)
+        self.assertIn("current_user_time_of_day:", prompt.system)
+        self.assertIn("current_user_daylight_context:", prompt.system)
         self.assertIn("personality_description: Warm and thoughtful", prompt.system)
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
@@ -228,7 +256,22 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Never describe the character in third person", prompt.system)
         self.assertIn("Do not mechanically repeat", prompt.system)
         self.assertIn("Do not claim to browse the internet", prompt.system)
+        self.assertIn("assume the character shares the user's city and timezone", prompt.system)
+        self.assertIn("Do not add or subtract the timezone offset again", prompt.system)
+        self.assertIn("answer with exact_current_user_local_time directly", prompt.system)
+        self.assertIn("Do not estimate, round, or shift it by a few minutes", prompt.system)
+        self.assertIn("Use current_user_time_of_day and current_user_daylight_context", prompt.system)
+        self.assertIn("Do not suggest sunset", prompt.system)
+        self.assertIn("do not suggest immediate in-person activities together", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_timezone_can_be_inferred_from_city(self) -> None:
+        self.assertEqual(infer_timezone("Ухта", "Россия"), "Europe/Moscow")
+        self.assertEqual(infer_timezone("Novosibirsk", "Russia"), "Asia/Novosibirsk")
+
+    def test_time_of_day_context_guides_realistic_suggestions(self) -> None:
+        self.assertEqual(describe_time_of_day(23), "late_evening")
+        self.assertIn("too late for ordinary sunset", describe_daylight_context(23))
 
     def test_memory_extraction_does_not_store_user_corrections_as_facts(self) -> None:
         corrections = [

@@ -24,6 +24,21 @@ class OrchestratorStateContext(BaseModel):
     energy: int
 
 
+class OrchestratorUserContext(BaseModel):
+    display_name: str
+    city: str
+    country: str
+    timezone: str
+    language: str
+    local_datetime: datetime
+    local_datetime_iso: str
+    local_date: str
+    local_time: str
+    weekday: str
+    time_of_day: str
+    daylight_context: str
+
+
 class OrchestratorMemoryItem(BaseModel):
     id: str
     content: str
@@ -45,6 +60,7 @@ class OrchestratorContext(BaseModel):
     relationship_mode: str
     profile: OrchestratorProfileContext
     state: OrchestratorStateContext
+    user_context: OrchestratorUserContext
     memory: dict[str, list[OrchestratorMemoryItem]]
     recent_messages: list[OrchestratorMessageContext]
     current_user_message: str

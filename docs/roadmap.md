@@ -4,7 +4,7 @@ This roadmap captures the current sprint order after early real-model testing.
 
 ## Sprint 1.6: Persona Prompt Contract v2
 
-Status: in progress locally.
+Status: completed and pushed.
 
 Focus:
 - Stable character identity, name, gender, and grammatical role.
@@ -18,6 +18,8 @@ Focus:
 
 ## Sprint 1.7: Chat UX Realism + Reliability
 
+Status: completed and pushed.
+
 Focus:
 - Typing indicator.
 - Response delay based on response length.
@@ -27,6 +29,8 @@ Focus:
 - Clear user-facing error states.
 
 ## Sprint 1.8: Time + User Context
+
+Status: implemented locally.
 
 Focus:
 - Current date and weekday.

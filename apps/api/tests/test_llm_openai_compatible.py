@@ -18,6 +18,7 @@ from app.schemas.orchestrator import (
     OrchestratorMessageContext,
     OrchestratorProfileContext,
     OrchestratorStateContext,
+    OrchestratorUserContext,
 )
 
 
@@ -39,6 +40,20 @@ def make_context() -> OrchestratorContext:
             user_nickname="Tester",
         ),
         state=OrchestratorStateContext(mood="curious", trust=20, attachment=10, energy=70),
+        user_context=OrchestratorUserContext(
+            display_name="Tester",
+            city="Moscow",
+            country="Russia",
+            timezone="Europe/Moscow",
+            language="ru",
+            local_datetime=now,
+            local_datetime_iso=now.isoformat(timespec="minutes"),
+            local_date=now.date().isoformat(),
+            local_time=now.strftime("%H:%M"),
+            weekday="Monday",
+            time_of_day="daytime",
+            daylight_context="daylight is generally plausible",
+        ),
         memory={
             "user_fact": [OrchestratorMemoryItem(id="m1", content="born in December", importance=2, created_at=now)],
             "preference": [],

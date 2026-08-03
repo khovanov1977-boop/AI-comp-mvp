@@ -12,6 +12,10 @@ export type Character = {
   dislikes: string;
   language: string;
   user_nickname: string;
+  user_city: string;
+  user_country: string;
+  user_timezone: string;
+  user_language: string;
   created_at: string;
 };
 
@@ -42,5 +46,12 @@ export type Memory = {
 
 export type CompanionContext = {
   character_state: CharacterState;
+  user_context: {
+    display_name: string;
+    city: string;
+    country: string;
+    timezone: string;
+    language: string;
+  };
   memories: Memory[];
 };

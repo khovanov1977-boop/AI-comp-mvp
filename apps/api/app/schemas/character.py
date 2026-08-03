@@ -16,6 +16,10 @@ class CharacterCreate(BaseModel):
     dislikes: str = ""
     language: str = "ru"
     user_nickname: str = ""
+    user_city: str = ""
+    user_country: str = ""
+    user_timezone: str = "Europe/Moscow"
+    user_language: str = "ru"
 
 
 class CharacterRead(BaseModel):
@@ -34,4 +38,8 @@ class CharacterRead(BaseModel):
     dislikes: str
     language: str
     user_nickname: str
+    user_city: str
+    user_country: str
+    user_timezone: str
+    user_language: str
     created_at: datetime

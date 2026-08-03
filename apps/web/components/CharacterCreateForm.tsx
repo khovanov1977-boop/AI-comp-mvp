@@ -17,6 +17,10 @@ const initialForm: CharacterCreateInput = {
   dislikes: "",
   language: "ru",
   user_nickname: "",
+  user_city: "",
+  user_country: "",
+  user_timezone: "",
+  user_language: "ru",
 };
 
 export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
@@ -131,6 +135,25 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           placeholder="Leave blank if the character should not use a name"
           onChange={(event) => update("user_nickname", event.target.value)}
         />
+      </label>
+      <div className="form-section">
+        <h3>About you</h3>
+        <p className="muted">This helps the character understand your local context.</p>
+      </div>
+      <label className="field">
+        <span className="label">Your city</span>
+        <input className="input" value={form.user_city} onChange={(event) => update("user_city", event.target.value)} />
+      </label>
+      <label className="field">
+        <span className="label">Your country</span>
+        <input className="input" value={form.user_country} onChange={(event) => update("user_country", event.target.value)} />
+      </label>
+      <label className="field">
+        <span className="label">Your language</span>
+        <select className="select" value={form.user_language} onChange={(event) => update("user_language", event.target.value)}>
+          <option value="ru">Russian</option>
+          <option value="en">English</option>
+        </select>
       </label>
       {error ? <p className="muted">{error}</p> : null}
       <button className="button" type="submit" disabled={isSaving}>

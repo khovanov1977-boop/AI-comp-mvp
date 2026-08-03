@@ -48,6 +48,15 @@ class MemoryRead(BaseModel):
     created_at: datetime
 
 
+class UserContextRead(BaseModel):
+    display_name: str
+    city: str
+    country: str
+    timezone: str
+    language: str
+
+
 class CompanionContextRead(BaseModel):
     character_state: CharacterStateRead
+    user_context: UserContextRead
     memories: list[MemoryRead]

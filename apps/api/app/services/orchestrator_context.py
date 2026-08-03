@@ -11,11 +11,20 @@ from app.schemas.orchestrator import (
     OrchestratorMessageContext,
     OrchestratorProfileContext,
     OrchestratorStateContext,
+    OrchestratorUserContext,
+)
+from app.services.time_context import (
+    DEFAULT_TIMEZONE,
+    describe_daylight_context,
+    describe_time_of_day,
+    get_local_datetime,
+    infer_timezone,
 )
 
 
 RECENT_MESSAGE_LIMIT = 12
 MEMORY_PER_CATEGORY_LIMIT = 8
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 def build_orchestrator_context(
@@ -26,6 +35,11 @@ def build_orchestrator_context(
 ) -> OrchestratorContext:
     profile = character.profile
     state = character.state
+    user = character.user
+    user_city = user.city if user else ""
+    user_country = user.country if user else ""
+    user_timezone = infer_timezone(user_city, user_country, user.timezone if user and user.timezone else DEFAULT_TIMEZONE)
+    local_datetime = get_local_datetime(user_timezone)
 
     recent_messages = list(
         db.scalars(
@@ -77,6 +91,20 @@ def build_orchestrator_context(
             trust=state.trust_level,
             attachment=state.attachment_level,
             energy=state.energy_level,
+        ),
+        user_context=OrchestratorUserContext(
+            display_name=user.display_name if user else "",
+            city=user_city,
+            country=user_country,
+            timezone=user_timezone,
+            language=user.language if user else profile.language if profile else "ru",
+            local_datetime=local_datetime,
+            local_datetime_iso=local_datetime.isoformat(timespec="minutes"),
+            local_date=local_datetime.date().isoformat(),
+            local_time=local_datetime.strftime("%H:%M"),
+            weekday=WEEKDAYS[local_datetime.weekday()],
+            time_of_day=describe_time_of_day(local_datetime.hour),
+            daylight_context=describe_daylight_context(local_datetime.hour),
         ),
         memory=memories_by_category,
         recent_messages=[

@@ -293,6 +293,34 @@ select {
   background: var(--accent);
 }
 
+.context-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-list div {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.context-list div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.context-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.context-list strong {
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 .memory-list {
   display: grid;
   gap: 8px;

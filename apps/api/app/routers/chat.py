@@ -6,7 +6,15 @@ from app.database import get_db
 from app.models.character import Character
 from app.models.message import Message
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
-from app.schemas.chat import ChatRequest, ChatResponse, ChatRetryRequest, CharacterStateRead, CompanionContextRead, MessageRead
+from app.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ChatRetryRequest,
+    CharacterStateRead,
+    CompanionContextRead,
+    MessageRead,
+    UserContextRead,
+)
 from app.services.memory_service import list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 
@@ -41,6 +49,13 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
             trust_level=state.trust_level,
             attachment_level=state.attachment_level,
             energy_level=state.energy_level,
+        ),
+        user_context=UserContextRead(
+            display_name=character.user.display_name if character.user else "",
+            city=character.user.city if character.user else "",
+            country=character.user.country if character.user else "",
+            timezone=character.user.timezone if character.user else "Europe/Moscow",
+            language=character.user.language if character.user else "ru",
         ),
         memories=list_character_memories(db, character_id),
     )
