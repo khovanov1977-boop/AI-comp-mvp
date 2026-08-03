@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.character import Character
 from app.models.message import Message
+from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
 from app.schemas.chat import ChatRequest, ChatResponse, CharacterStateRead, CompanionContextRead, MessageRead
 from app.services.memory_service import list_character_memories
 from app.services.orchestrator import handle_chat_message
@@ -51,7 +52,27 @@ def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    reply, _message = handle_chat_message(db, character, payload.message)
+    try:
+        reply, _message = handle_chat_message(db, character, payload.message)
+    except LLMConfigurationError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "llm_configuration_error", "message": str(exc)},
+        ) from exc
+    except LLMProviderError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "llm_provider_error", "message": str(exc)},
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
+        ) from exc
+
     state = character.state
     return ChatResponse(
         reply=reply,

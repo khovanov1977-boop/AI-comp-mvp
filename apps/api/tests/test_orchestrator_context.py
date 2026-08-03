@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -15,6 +16,7 @@ from app.models.user import User
 from app.config import Settings
 from app.providers.llm_factory import get_llm_provider
 from app.providers.llm_mock import generate_reply
+from app.providers.llm_openai_compatible import LLMProviderError
 from app.services.character_engine import update_state_after_message
 from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
@@ -101,6 +103,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
         self.assertEqual(context.character_id, self.character.id)
         self.assertEqual(context.character_name, "Alice")
+        self.assertEqual(context.character_gender, "female")
         self.assertEqual(context.relationship_mode, "friend")
         self.assertEqual(context.profile.personality_description, "Warm and thoughtful")
         self.assertEqual(context.profile.communication_style, "Gentle, concise")
@@ -208,8 +211,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
         prompt = build_provider_prompt(context)
 
-        self.assertIn("Character: Alice", prompt.system)
-        self.assertIn("Relationship mode: friend", prompt.system)
+        self.assertIn("character_name: Alice", prompt.system)
+        self.assertIn("character_gender: female", prompt.system)
+        self.assertIn("user_name: Tester", prompt.system)
+        self.assertIn("relationship_mode: friend", prompt.system)
         self.assertIn("personality_description: Warm and thoughtful", prompt.system)
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
@@ -217,20 +222,112 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("trust: 21", prompt.system)
         self.assertIn("preference:", prompt.system)
         self.assertIn("- likes tea", prompt.system)
+        self.assertIn("Never confuse character_name and user_name", prompt.system)
+        self.assertIn("do not invent a name", prompt.system)
+        self.assertIn("obey the correction", prompt.system)
+        self.assertIn("Never describe the character in third person", prompt.system)
+        self.assertIn("Do not mechanically repeat", prompt.system)
+        self.assertIn("Do not claim to browse the internet", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_memory_extraction_does_not_store_user_corrections_as_facts(self) -> None:
+        corrections = [
+            "\u043f\u043e\u0447\u0435\u043c\u0443 \u0442\u044b \u043d\u0430\u0437\u044b\u0432\u0430\u0435\u0448\u044c \u043c\u0435\u043d\u044f \u041d\u0430\u0442\u0430\u043b\u0438?",
+            "\u044f \u043d\u0435 \u0433\u043e\u0432\u043e\u0440\u0438\u043b\u0430 \u0442\u0430\u043a\u043e\u0433\u043e",
+            "do not call me Alex",
+        ]
+
+        for correction in corrections:
+            self.assertIsNone(remember_user_message(self.db, self.character.id, correction))
+
+        memories = self.db.query(Memory).filter(Memory.character_id == self.character.id).all()
+        self.assertEqual(memories, [])
 
     def test_config_defaults_to_mock_provider(self) -> None:
         self.assertEqual(Settings.model_fields["llm_provider"].default, "mock")
         self.assertEqual(get_llm_provider("mock").name, "mock")
 
     def test_chat_flow_returns_mock_reply_through_provider_interface(self) -> None:
-        reply, assistant_message = handle_chat_message(self.db, self.character, "I am testing chat flow")
+        with patch("app.services.orchestrator.get_llm_provider", return_value=get_llm_provider("mock")):
+            reply, assistant_message = handle_chat_message(self.db, self.character, "I am testing chat flow")
 
         self.assertEqual(reply, assistant_message.content)
         self.assertTrue(reply)
         messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
         self.assertEqual([message.role for message in messages], ["user", "assistant"])
         self.assertEqual(self.character.state.mood, "attentive")
+
+    def test_chat_flow_preserves_user_message_when_provider_fails(self) -> None:
+        class FailingProvider:
+            def generate_reply(self, _context):
+                raise LLMProviderError("LLM provider returned HTTP 429")
+
+        with patch("app.services.orchestrator.get_llm_provider", return_value=FailingProvider()):
+            with self.assertRaisesRegex(LLMProviderError, "HTTP 429"):
+                handle_chat_message(self.db, self.character, "Please do not lose this")
+
+        messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].role, "user")
+        self.assertEqual(messages[0].content, "Please do not lose this")
+
+    def test_chat_endpoint_returns_service_unavailable_for_provider_errors(self) -> None:
+        class FailingProvider:
+            def generate_reply(self, _context):
+                raise LLMProviderError("LLM provider returned HTTP 429")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with patch("app.services.orchestrator.get_llm_provider", return_value=FailingProvider()):
+                client = TestClient(app)
+                response = client.post(
+                    "/chat",
+                    json={"character_id": self.character.id, "message": "Keep this message"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["detail"]["error"], "llm_provider_error")
+        self.assertEqual(payload["detail"]["message"], "LLM provider returned HTTP 429")
+        messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
+        self.assertEqual([message.content for message in messages], ["Keep this message"])
+
+    def test_chat_endpoint_returns_service_unavailable_for_unexpected_errors(self) -> None:
+        class FailingProvider:
+            def generate_reply(self, _context):
+                raise RuntimeError("Unexpected provider failure")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with patch("app.services.orchestrator.get_llm_provider", return_value=FailingProvider()):
+                client = TestClient(app)
+                response = client.post(
+                    "/chat",
+                    json={"character_id": self.character.id, "message": "Keep this too"},
+                )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["detail"]["error"], "chat_error")
+        self.assertEqual(payload["detail"]["message"], "Unexpected provider failure")
 
 
 if __name__ == "__main__":

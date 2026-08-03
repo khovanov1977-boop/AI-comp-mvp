@@ -60,6 +60,7 @@ def build_orchestrator_context(
     return OrchestratorContext(
         character_id=character.id,
         character_name=character.name,
+        character_gender=character.gender,
         relationship_mode=character.relationship_mode,
         profile=OrchestratorProfileContext(
             personality_description=profile.personality_description if profile else "",

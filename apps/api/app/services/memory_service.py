@@ -55,6 +55,22 @@ CITY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+MEMORY_REJECTION_MARKERS = [
+    "\u043d\u0435 \u0433\u043e\u0432\u043e\u0440\u0438\u043b",
+    "\u043d\u0435 \u0433\u043e\u0432\u043e\u0440\u0438\u043b\u0430",
+    "\u043d\u0435 \u043f\u0440\u043e\u0441\u0438\u043b",
+    "\u043d\u0435 \u043f\u0440\u043e\u0441\u0438\u043b\u0430",
+    "\u043d\u0435 \u043d\u0430\u0437\u044b\u0432\u0430\u0439",
+    "\u043f\u043e\u0447\u0435\u043c\u0443 \u0442\u044b \u043d\u0430\u0437\u044b\u0432\u0430\u0435\u0448\u044c",
+    "\u043e\u0441\u0432\u0435\u0436\u0438\u0442\u044c \u0432 \u043f\u0430\u043c\u044f\u0442\u0438",
+    "\u044f \u043d\u0435 \u044d\u0442\u043e",
+    "i did not say",
+    "i didn't say",
+    "do not call me",
+    "don't call me",
+    "why do you call me",
+]
+
 
 def normalize_birth_date(content: str) -> str | None:
     normalized = content.lower()
@@ -134,6 +150,8 @@ def categorize_memory(content: str, summary: str) -> str:
 
 def should_store_memory(content: str) -> bool:
     normalized = f" {content.lower()} "
+    if any(marker in normalized for marker in MEMORY_REJECTION_MARKERS):
+        return False
     return len(content.strip()) >= 12 and any(trigger in normalized for trigger in MEMORY_TRIGGERS)
 
 

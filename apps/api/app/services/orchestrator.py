@@ -12,7 +12,8 @@ def handle_chat_message(db: Session, character: Character, user_message: str) ->
     inbound = Message(character_id=character.id, role="user", content=user_message, message_type="text")
     db.add(inbound)
     remember_user_message(db, character.id, user_message)
-    db.flush()
+    db.commit()
+    db.refresh(character)
 
     context = build_orchestrator_context(db, character, user_message, recent_message_limit=8)
     reply = get_llm_provider().generate_reply(context)

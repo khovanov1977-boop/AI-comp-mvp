@@ -56,7 +56,11 @@ class OpenAICompatibleLLMProvider:
             raise LLMProviderError("LLM provider request failed") from exc
 
         if response.status_code != 200:
-            raise LLMProviderError(f"LLM provider returned HTTP {response.status_code}")
+            detail = response.text.strip().replace("\n", " ")[:500]
+            message = f"LLM provider returned HTTP {response.status_code}"
+            if detail:
+                message = f"{message}: {detail}"
+            raise LLMProviderError(message)
 
         try:
             data = response.json()

@@ -41,6 +41,7 @@ class OrchestratorMessageContext(BaseModel):
 class OrchestratorContext(BaseModel):
     character_id: str
     character_name: str
+    character_gender: str
     relationship_mode: str
     profile: OrchestratorProfileContext
     state: OrchestratorStateContext

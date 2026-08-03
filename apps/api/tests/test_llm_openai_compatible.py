@@ -26,6 +26,7 @@ def make_context() -> OrchestratorContext:
     return OrchestratorContext(
         character_id="character-1",
         character_name="Alice",
+        character_gender="female",
         relationship_mode="friend",
         profile=OrchestratorProfileContext(
             personality_description="Warm and thoughtful",
@@ -116,7 +117,7 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.7)
         self.assertEqual(payload["max_tokens"], 321)
         self.assertEqual(payload["messages"][0]["role"], "system")
-        self.assertIn("Character: Alice", payload["messages"][0]["content"])
+        self.assertIn("character_name: Alice", payload["messages"][0]["content"])
         self.assertEqual(payload["messages"][-1], {"role": "user", "content": "How are you?"})
 
     def test_missing_config_raises_clear_configuration_error(self) -> None:

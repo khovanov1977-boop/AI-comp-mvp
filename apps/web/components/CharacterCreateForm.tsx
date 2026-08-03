@@ -46,8 +46,12 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
   return (
     <form className="panel stack" onSubmit={submit}>
       <h2>Create character</h2>
+      <div className="form-section">
+        <h3>Character details</h3>
+        <p className="muted">These fields describe the companion you are creating.</p>
+      </div>
       <label className="field">
-        <span className="label">Name</span>
+        <span className="label">Character name</span>
         <input className="input" value={form.name} onChange={(event) => update("name", event.target.value)} required />
       </label>
       <label className="field">
@@ -115,11 +119,16 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           <option value="en">English</option>
         </select>
       </label>
+      <div className="form-section">
+        <h3>How the character addresses you</h3>
+        <p className="muted">This is your name or nickname, not the character's name.</p>
+      </div>
       <label className="field">
-        <span className="label">User nickname</span>
+        <span className="label">Your name or nickname for this character</span>
         <input
           className="input"
           value={form.user_nickname}
+          placeholder="Leave blank if the character should not use a name"
           onChange={(event) => update("user_nickname", event.target.value)}
         />
       </label>

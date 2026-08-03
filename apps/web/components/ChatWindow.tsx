@@ -40,8 +40,10 @@ export function ChatWindow({ characterId, onAfterSend }: { characterId: string; 
       await sendChatMessage(characterId, text);
       await loadHistory();
       onAfterSend?.();
-    } catch {
-      setError("Could not send message. Check that the backend is running.");
+    } catch (caughtError) {
+      await loadHistory().catch(() => undefined);
+      const message = caughtError instanceof Error ? caughtError.message : "Could not send message.";
+      setError(message);
     } finally {
       setIsSending(false);
     }
