@@ -71,6 +71,13 @@ export function sendChatMessage(characterId: string, message: string) {
   });
 }
 
+export function retryChatMessage(characterId: string) {
+  return request<{ reply: string; character_state: CompanionContext["character_state"] }>("/chat/retry", {
+    method: "POST",
+    body: JSON.stringify({ character_id: characterId }),
+  });
+}
+
 export function createMemory(input: {
   character_id: string;
   memory_type: Memory["memory_type"];

@@ -6,9 +6,9 @@ from app.database import get_db
 from app.models.character import Character
 from app.models.message import Message
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
-from app.schemas.chat import ChatRequest, ChatResponse, CharacterStateRead, CompanionContextRead, MessageRead
+from app.schemas.chat import ChatRequest, ChatResponse, ChatRetryRequest, CharacterStateRead, CompanionContextRead, MessageRead
 from app.services.memory_service import list_character_memories
-from app.services.orchestrator import handle_chat_message
+from app.services.orchestrator import handle_chat_message, retry_last_user_message
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -54,6 +54,48 @@ def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
 
     try:
         reply, _message = handle_chat_message(db, character, payload.message)
+    except LLMConfigurationError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "llm_configuration_error", "message": str(exc)},
+        ) from exc
+    except LLMProviderError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "llm_provider_error", "message": str(exc)},
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
+        ) from exc
+
+    state = character.state
+    return ChatResponse(
+        reply=reply,
+        character_state=CharacterStateRead(
+            mood=state.mood,
+            trust_level=state.trust_level,
+            attachment_level=state.attachment_level,
+            energy_level=state.energy_level,
+        ),
+    )
+
+
+@router.post("/retry", response_model=ChatResponse)
+def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> ChatResponse:
+    character = db.get(Character, payload.character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    try:
+        reply, _message = retry_last_user_message(db, character)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LLMConfigurationError as exc:
         db.rollback()
         raise HTTPException(

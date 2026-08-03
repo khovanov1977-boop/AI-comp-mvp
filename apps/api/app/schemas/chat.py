@@ -17,6 +17,10 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class ChatRetryRequest(BaseModel):
+    character_id: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     character_state: CharacterStateRead

@@ -329,6 +329,40 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["detail"]["error"], "chat_error")
         self.assertEqual(payload["detail"]["message"], "Unexpected provider failure")
 
+    def test_chat_retry_reuses_last_failed_user_message_without_duplicate(self) -> None:
+        class FailingProvider:
+            def generate_reply(self, _context):
+                raise LLMProviderError("LLM provider returned HTTP 429")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            with patch("app.services.orchestrator.get_llm_provider", return_value=FailingProvider()):
+                failed_response = client.post(
+                    "/chat",
+                    json={"character_id": self.character.id, "message": "Please retry this"},
+                )
+            with patch("app.services.orchestrator.get_llm_provider", return_value=get_llm_provider("mock")):
+                retry_response = client.post(
+                    "/chat/retry",
+                    json={"character_id": self.character.id},
+                )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(failed_response.status_code, 503)
+        self.assertEqual(retry_response.status_code, 200)
+        messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
+        self.assertEqual([message.role for message in messages], ["user", "assistant"])
+        self.assertEqual(messages[0].content, "Please retry this")
+
 
 if __name__ == "__main__":
     unittest.main()
