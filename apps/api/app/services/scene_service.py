@@ -1,3 +1,5 @@
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.character import Character, CharacterScene
@@ -17,9 +19,20 @@ def get_or_create_scene(db: Session, character: Character) -> CharacterScene:
     if character.scene:
         return character.scene
 
+    existing_scene = db.scalar(select(CharacterScene).where(CharacterScene.character_id == character.id))
+    if existing_scene:
+        return existing_scene
+
     scene = CharacterScene(character_id=character.id, **DEFAULT_SCENE)
     db.add(scene)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing_scene = db.scalar(select(CharacterScene).where(CharacterScene.character_id == character.id))
+        if existing_scene:
+            return existing_scene
+        raise
     db.refresh(scene)
     db.refresh(character)
     return scene

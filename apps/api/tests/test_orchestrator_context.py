@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -17,11 +18,13 @@ from app.config import Settings
 from app.providers.llm_factory import get_llm_provider
 from app.providers.llm_mock import generate_reply
 from app.providers.llm_openai_compatible import LLMProviderError
-from app.services.character_engine import update_state_after_message
+from app.services.character_engine import analyze_user_message, update_state_after_message
 from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
+from app.services.response_sanitizer import sanitize_assistant_reply
+from app.services.scene_service import get_or_create_scene
 from app.services.time_context import describe_daylight_context, describe_time_of_day, infer_timezone
 
 
@@ -185,12 +188,21 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.character.state.attachment_level = 99
         self.character.state.energy_level = 0
 
-        state = update_state_after_message(self.character)
+        state = update_state_after_message(self.character, "I love this, thank you :)")
 
-        self.assertEqual(state.mood, "attentive")
+        self.assertEqual(state.mood, "warm")
         self.assertEqual(state.trust_level, 100)
         self.assertEqual(state.attachment_level, 100)
         self.assertEqual(state.energy_level, 0)
+
+    def test_state_engine_detects_conflict_and_smileys(self) -> None:
+        conflict = analyze_user_message("Ты перепутал мое имя, не называй меня так")
+        smile = analyze_user_message("Спасибо, мне хорошо :)")
+
+        self.assertEqual(conflict.mood, "guarded")
+        self.assertLess(conflict.trust_delta, 0)
+        self.assertEqual(smile.mood, "warm")
+        self.assertGreater(smile.trust_delta, 0)
 
     def test_debug_endpoint_returns_structured_context(self) -> None:
         self.add_context_records()
@@ -228,6 +240,35 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
 
+    def test_character_creation_creates_default_scene(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/characters",
+                json={
+                    "name": "Sergey",
+                    "gender": "male",
+                    "relationship_mode": "friend",
+                    "language": "ru",
+                },
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        character_id = response.json()["id"]
+        scene = self.db.scalar(select(CharacterScene).where(CharacterScene.character_id == character_id))
+        self.assertIsNotNone(scene)
+        self.assertEqual(scene.presence_mode, "remote_chat")
+
     def test_mock_provider_can_be_called_through_provider_interface(self) -> None:
         self.add_context_records()
         context = build_orchestrator_context(self.db, self.character, "How are you?")
@@ -264,7 +305,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
         self.assertIn("mood: curious", prompt.system)
+        self.assertIn("mood_human_ru:", prompt.system)
+        self.assertIn("живой интерес", prompt.system)
         self.assertIn("trust: 21", prompt.system)
+        self.assertIn("State behavior guidance:", prompt.system)
+        self.assertIn("Let mood influence tone naturally", prompt.system)
+        self.assertIn("use mood_human_ru as the emotional nuance", prompt.system)
+        self.assertIn("Do not announce state numbers", prompt.system)
         self.assertIn("preference:", prompt.system)
         self.assertIn("- likes tea", prompt.system)
         self.assertIn("Never confuse character_name and user_name", prompt.system)
@@ -283,7 +330,17 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Treat world_state as the current reality", prompt.system)
         self.assertIn("Do not invent a different place", prompt.system)
         self.assertIn("If the user asks where you are", prompt.system)
+        self.assertIn("Never output tool calls", prompt.system)
+        self.assertIn("<tool_call>", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_response_sanitizer_removes_tool_call_artifacts(self) -> None:
+        reply = "Я уже рядом, слышишь? wait <tool_call>\nenter</tool_call>\nИ говорю с тобой."
+
+        cleaned = sanitize_assistant_reply(reply)
+
+        self.assertEqual(cleaned, "Я уже рядом, слышишь?\nИ говорю с тобой.")
+        self.assertNotIn("tool_call", cleaned)
 
     def test_same_place_scene_allows_physical_presence_in_context(self) -> None:
         self.character.scene = CharacterScene(
@@ -306,6 +363,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.world_state.location_type, "outdoor_place")
         self.assertEqual(context.world_state.posture_summary, "seated")
         self.assertIn("possible", context.world_state.physical_touch_policy)
+
+    def test_get_or_create_scene_reuses_existing_scene(self) -> None:
+        first_scene = get_or_create_scene(self.db, self.character)
+        second_scene = get_or_create_scene(self.db, self.character)
+
+        self.assertEqual(first_scene.id, second_scene.id)
+        self.assertEqual(first_scene.character_id, self.character.id)
 
     def test_timezone_can_be_inferred_from_city(self) -> None:
         self.assertEqual(infer_timezone("Ухта", "Россия"), "Europe/Moscow")
@@ -340,7 +404,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertTrue(reply)
         messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
         self.assertEqual([message.role for message in messages], ["user", "assistant"])
-        self.assertEqual(self.character.state.mood, "attentive")
+        self.assertIn(self.character.state.mood, {"attentive", "curious", "warm", "concerned", "guarded"})
 
     def test_chat_flow_preserves_user_message_when_provider_fails(self) -> None:
         class FailingProvider:

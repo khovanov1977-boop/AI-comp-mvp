@@ -20,6 +20,43 @@ const PRESENCE_MODES: Array<{ value: CompanionContext["scene_context"]["presence
   { value: "virtual_roleplay", label: "Virtual roleplay" },
 ];
 
+const MOOD_LABELS: Record<string, { label: string; description: string }> = {
+  attentive: {
+    label: "Включённость",
+    description: "рядом, слышит тебя, держит живой контакт",
+  },
+  curious: {
+    label: "Живой интерес",
+    description: "хочет понять больше и развить разговор",
+  },
+  warm: {
+    label: "Тепло",
+    description: "мягче, ближе, больше нежности и принятия",
+  },
+  concerned: {
+    label: "Бережная тревога",
+    description: "заботится, становится спокойнее и внимательнее",
+  },
+  guarded: {
+    label: "Осторожность",
+    description: "не закрывается, но держит дистанцию и выбирает слова",
+  },
+};
+
+function getMoodLabel(mood: string) {
+  return MOOD_LABELS[mood] ?? { label: "Ровное присутствие", description: "спокойный, живой контакт" };
+}
+
+function getLanguageLabel(language: string) {
+  if (language === "ru") {
+    return "Русский";
+  }
+  if (language === "en") {
+    return "English";
+  }
+  return language || "Not set";
+}
+
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
     <div className="stat-row">
@@ -46,6 +83,7 @@ export function CompanionPanel({
   onMemoryChange: () => void;
 }) {
   const state = context?.character_state;
+  const moodLabel = state ? getMoodLabel(state.mood) : null;
   const userContext = context?.user_context;
   const sceneContext = context?.scene_context;
   const memories = context?.memories ?? [];
@@ -132,28 +170,28 @@ export function CompanionPanel({
         {character.biography ? <p className="muted">{character.biography}</p> : null}
         {character.likes ? <p className="muted">Likes: {character.likes}</p> : null}
         {character.dislikes ? <p className="muted">Dislikes: {character.dislikes}</p> : null}
-        {character.user_nickname ? <p className="muted">User: {character.user_nickname}</p> : null}
       </section>
 
       <section className="stack">
-        <h2 className="panel-title">State</h2>
+        <h2 className="panel-title">Эмоциональное состояние</h2>
         {state ? (
           <>
             <div className="mood-row">
-              <span>Mood</span>
-              <strong>{state.mood}</strong>
+              <span>Настроение</span>
+              <strong>{moodLabel?.label}</strong>
+              <small>{moodLabel?.description}</small>
             </div>
-            <StatRow label="Trust" value={state.trust_level} />
-            <StatRow label="Attachment" value={state.attachment_level} />
-            <StatRow label="Energy" value={state.energy_level} />
+            <StatRow label="Доверие" value={state.trust_level} />
+            <StatRow label="Близость" value={state.attachment_level} />
+            <StatRow label="Ресурс" value={state.energy_level} />
           </>
         ) : (
-          <p className="muted">Loading state...</p>
+          <p className="muted">Состояние загружается...</p>
         )}
       </section>
 
       <section className="stack">
-        <h2 className="panel-title">User context</h2>
+        <h2 className="panel-title">О пользователе</h2>
         {userContext ? (
           <div className="context-list">
             <div>
@@ -170,7 +208,7 @@ export function CompanionPanel({
             </div>
             <div>
               <span>Language</span>
-              <strong>{userContext.language}</strong>
+              <strong>{getLanguageLabel(userContext.language)}</strong>
             </div>
           </div>
         ) : (

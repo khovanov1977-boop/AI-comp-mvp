@@ -3,9 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.character import Character, CharacterProfile, CharacterState
+from app.models.character import Character, CharacterProfile, CharacterScene, CharacterState
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead
+from app.services.scene_service import DEFAULT_SCENE
 from app.services.time_context import infer_timezone
 
 router = APIRouter(prefix="/characters", tags=["characters"])
@@ -76,6 +77,7 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         user_nickname=payload.user_nickname,
     )
     character.state = CharacterState()
+    character.scene = CharacterScene(**DEFAULT_SCENE)
     db.add(character)
     db.commit()
     db.refresh(character)

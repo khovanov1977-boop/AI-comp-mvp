@@ -258,18 +258,23 @@ select {
 }
 
 .mood-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 5px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 8px;
-  color: var(--muted);
-  font-size: 13px;
+  color: var(--ink);
+  font-size: 14px;
 }
 
 .mood-row strong {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 16px;
+}
+
+.mood-row small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .stat-row {

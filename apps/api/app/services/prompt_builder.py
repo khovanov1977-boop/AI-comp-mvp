@@ -15,6 +15,19 @@ class ProviderPrompt:
     messages: list[ProviderMessage]
 
 
+MOOD_HUMAN_RU = {
+    "attentive": "включённость: персонаж рядом, собран, внимательно слышит пользователя",
+    "curious": "живой интерес: персонажу хочется понять больше и мягко развить разговор",
+    "warm": "тепло: персонаж открыт, мягок, расположен к близости и нежности",
+    "concerned": "бережная тревога: персонаж заботится, становится спокойнее и внимательнее",
+    "guarded": "осторожность: персонаж не закрыт полностью, но держит дистанцию и выбирает слова аккуратнее",
+}
+
+
+def get_mood_human_ru(mood: str) -> str:
+    return MOOD_HUMAN_RU.get(mood, "ровное присутствие: персонаж держит спокойный, живой контакт")
+
+
 def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     profile = context.profile
     state = context.state
@@ -76,9 +89,16 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- dislikes: {profile.dislikes}",
         "Current relationship state:",
         f"- mood: {state.mood}",
+        f"- mood_human_ru: {get_mood_human_ru(state.mood)}",
         f"- trust: {state.trust}",
         f"- attachment: {state.attachment}",
         f"- energy: {state.energy}",
+        "State behavior guidance:",
+        "- Let mood influence tone naturally. warm means softer and more affectionate; curious means engaged and inquisitive; concerned means caring and steady; guarded means more careful and less instantly trusting; attentive means present and balanced.",
+        "- If replying in Russian, use mood_human_ru as the emotional nuance behind the character's words, without naming it directly.",
+        "- Low energy should make replies calmer and less exuberant. High energy can make replies more lively, but still natural.",
+        "- Higher trust and attachment can make the character more open and emotionally close. Lower trust should make the character more cautious.",
+        "- Do not announce state numbers or mood labels unless the user explicitly asks.",
         "Memory:",
         *(memory_lines or ["- none"]),
         "Speech contract:",
@@ -102,6 +122,7 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Reply naturally in the user's language unless the user asks otherwise.",
         "- Do not mechanically repeat or paraphrase the user's last sentence.",
         "- Do not recite profile, memory, state, or system fields. Use them quietly to shape the reply.",
+        "- Never output tool calls, XML tags, hidden control text, <tool_call>, </tool_call>, wait <tool_call>, enter </tool_call>, or similar internal markup.",
         "- Keep replies concise by default: usually 1-4 short paragraphs, unless the user asks for detail.",
         "- Avoid filler, repeated ideas, and token-wasting explanations.",
         "- Be warm, initiative-taking, specific, and situationally aware.",
