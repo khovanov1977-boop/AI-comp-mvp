@@ -19,6 +19,8 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     profile = context.profile
     state = context.state
     user_context = context.user_context
+    scene_context = context.scene_context
+    world_state = context.world_state
     user_name = profile.user_nickname or user_context.display_name or "the user"
     memory_lines = []
     for category, memories in context.memory.items():
@@ -35,6 +37,16 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- user_name: {user_name}",
         f"- relationship_mode: {context.relationship_mode}",
         f"- language: {profile.language}",
+        "Current reality / world state (highest priority for physical actions):",
+        f"- reality_summary: {world_state.reality_summary}",
+        f"- location_type: {world_state.location_type}",
+        f"- posture_summary: {world_state.posture_summary}",
+        f"- physical_touch_policy: {world_state.physical_touch_policy}",
+        f"- shared_space_policy: {world_state.shared_space_policy}",
+        f"- movement_policy: {world_state.movement_policy}",
+        f"- allowed_interaction_modes: {', '.join(world_state.allowed_interaction_modes)}",
+        "Before replying, silently check that every physical action, place reference, posture, and movement matches the current world state.",
+        "If the user's message conflicts with the world state, respond naturally from the current reality or ask to change the scene.",
         "User context:",
         f"- user_display_name: {user_context.display_name}",
         f"- user_city: {user_context.city}",
@@ -47,6 +59,14 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- current_user_weekday: {user_context.weekday}",
         f"- current_user_time_of_day: {user_context.time_of_day}",
         f"- current_user_daylight_context: {user_context.daylight_context}",
+        "Scene context:",
+        f"- presence_mode: {scene_context.presence_mode}",
+        f"- location_name: {scene_context.location_name}",
+        f"- location_description: {scene_context.location_description}",
+        f"- user_position: {scene_context.user_position}",
+        f"- character_position: {scene_context.character_position}",
+        f"- can_use_physical_touch: {scene_context.can_use_physical_touch}",
+        f"- can_share_immediate_physical_space: {scene_context.can_share_immediate_physical_space}",
         "Persona profile:",
         f"- personality_description: {profile.personality_description}",
         f"- communication_style: {profile.communication_style}",
@@ -75,6 +95,10 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Do not suggest sunset, daylight walks, morning routines, or open venues when they contradict the current local time context.",
         "- Unless a different character city or timezone is explicitly stated, assume the character shares the user's city and timezone.",
         "- If the conversation establishes that character and user are in different cities, do not suggest immediate in-person activities together.",
+        "- Treat world_state as the current reality of the conversation.",
+        "- Do not invent a different place, furniture, posture, or movement unless the user explicitly changes the scene.",
+        "- If the user asks where you are, answer from world_state and scene_context.",
+        "- In remote_chat mode, keep physical closeness virtual, imagined, or emotional rather than literal.",
         "- Reply naturally in the user's language unless the user asks otherwise.",
         "- Do not mechanically repeat or paraphrase the user's last sentence.",
         "- Do not recite profile, memory, state, or system fields. Use them quietly to shape the reply.",

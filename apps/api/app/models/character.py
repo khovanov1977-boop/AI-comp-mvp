@@ -20,6 +20,7 @@ class Character(Base):
     user = relationship("User", back_populates="characters")
     profile = relationship("CharacterProfile", back_populates="character", uselist=False, cascade="all, delete-orphan")
     state = relationship("CharacterState", back_populates="character", uselist=False, cascade="all, delete-orphan")
+    scene = relationship("CharacterScene", back_populates="character", uselist=False, cascade="all, delete-orphan")
     messages = relationship("Message", back_populates="character", cascade="all, delete-orphan")
 
 
@@ -54,3 +55,18 @@ class CharacterState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     character = relationship("Character", back_populates="state")
+
+
+class CharacterScene(Base):
+    __tablename__ = "character_scenes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    character_id: Mapped[str] = mapped_column(String, ForeignKey("characters.id"), unique=True, index=True)
+    presence_mode: Mapped[str] = mapped_column(String, default="remote_chat")
+    location_name: Mapped[str] = mapped_column(String, default="Private chat")
+    location_description: Mapped[str] = mapped_column(Text, default="")
+    user_position: Mapped[str] = mapped_column(String, default="at their own place")
+    character_position: Mapped[str] = mapped_column(String, default="at their own place")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    character = relationship("Character", back_populates="scene")

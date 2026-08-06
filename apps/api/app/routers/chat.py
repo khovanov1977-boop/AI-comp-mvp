@@ -13,10 +13,12 @@ from app.schemas.chat import (
     CharacterStateRead,
     CompanionContextRead,
     MessageRead,
+    SceneContextRead,
     UserContextRead,
 )
 from app.services.memory_service import list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
+from app.services.scene_service import get_or_create_scene
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -43,6 +45,7 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
         raise HTTPException(status_code=404, detail="Character not found")
 
     state = character.state
+    scene = get_or_create_scene(db, character)
     return CompanionContextRead(
         character_state=CharacterStateRead(
             mood=state.mood,
@@ -56,6 +59,14 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
             country=character.user.country if character.user else "",
             timezone=character.user.timezone if character.user else "Europe/Moscow",
             language=character.user.language if character.user else "ru",
+        ),
+        scene_context=SceneContextRead(
+            character_id=scene.character_id,
+            presence_mode=scene.presence_mode,
+            location_name=scene.location_name,
+            location_description=scene.location_description,
+            user_position=scene.user_position,
+            character_position=scene.character_position,
         ),
         memories=list_character_memories(db, character_id),
     )

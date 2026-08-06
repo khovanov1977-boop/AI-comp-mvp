@@ -99,3 +99,10 @@ export function deleteMemory(memoryId: string) {
     method: "DELETE",
   });
 }
+
+export function updateScene(input: CompanionContext["scene_context"]) {
+  return request<CompanionContext["scene_context"]>("/scenes", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}

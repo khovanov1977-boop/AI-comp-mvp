@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Character, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
-import { createMemory, deleteMemory } from "../lib/api";
+import { createMemory, deleteMemory, updateScene } from "../lib/api";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
   { value: "user_fact", label: "User facts" },
@@ -12,6 +12,12 @@ const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> 
   { value: "life_event", label: "Life events" },
   { value: "relationship_note", label: "Relationship notes" },
   { value: "system_note", label: "System notes" },
+];
+
+const PRESENCE_MODES: Array<{ value: CompanionContext["scene_context"]["presence_mode"]; label: string }> = [
+  { value: "remote_chat", label: "Remote chat" },
+  { value: "same_place", label: "Same place" },
+  { value: "virtual_roleplay", label: "Virtual roleplay" },
 ];
 
 function StatRow({ label, value }: { label: string; value: number }) {
@@ -31,19 +37,29 @@ function StatRow({ label, value }: { label: string; value: number }) {
 export function CompanionPanel({
   character,
   context,
+  contextError,
   onMemoryChange,
 }: {
   character: Character;
   context: CompanionContext | null;
+  contextError: string;
   onMemoryChange: () => void;
 }) {
   const state = context?.character_state;
   const userContext = context?.user_context;
+  const sceneContext = context?.scene_context;
   const memories = context?.memories ?? [];
   const [memoryType, setMemoryType] = useState<Memory["memory_type"]>("user_fact");
   const [memoryContent, setMemoryContent] = useState("");
   const [isSavingMemory, setIsSavingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState("");
+  const [sceneDraft, setSceneDraft] = useState<CompanionContext["scene_context"] | null>(null);
+  const [isSavingScene, setIsSavingScene] = useState(false);
+  const [sceneError, setSceneError] = useState("");
+
+  useEffect(() => {
+    setSceneDraft(sceneContext ?? null);
+  }, [sceneContext]);
 
   async function removeMemory(memoryId: string) {
     setMemoryError("");
@@ -80,8 +96,33 @@ export function CompanionPanel({
     }
   }
 
+  function updateSceneDraft<K extends keyof CompanionContext["scene_context"]>(
+    key: K,
+    value: CompanionContext["scene_context"][K],
+  ) {
+    setSceneDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  async function submitScene(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sceneDraft) {
+      return;
+    }
+    setIsSavingScene(true);
+    setSceneError("");
+    try {
+      await updateScene(sceneDraft);
+      onMemoryChange();
+    } catch {
+      setSceneError("Could not update scene.");
+    } finally {
+      setIsSavingScene(false);
+    }
+  }
+
   return (
     <aside className="panel stack">
+      {contextError ? <p className="context-error">{contextError}</p> : null}
       <section className="stack">
         <div>
           <h2 className="panel-title">{character.name}</h2>
@@ -134,6 +175,76 @@ export function CompanionPanel({
           </div>
         ) : (
           <p className="muted">Loading user context...</p>
+        )}
+      </section>
+
+      <section className="stack">
+        <h2 className="panel-title">Scene</h2>
+        {sceneDraft ? (
+          <form className="scene-form" onSubmit={submitScene}>
+            <label className="field">
+              <span className="label">Presence mode</span>
+              <select
+                className="select"
+                value={sceneDraft.presence_mode}
+                disabled={isSavingScene}
+                onChange={(event) =>
+                  updateSceneDraft(
+                    "presence_mode",
+                    event.target.value as CompanionContext["scene_context"]["presence_mode"],
+                  )
+                }
+              >
+                {PRESENCE_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Location</span>
+              <input
+                className="input"
+                value={sceneDraft.location_name}
+                disabled={isSavingScene}
+                onChange={(event) => updateSceneDraft("location_name", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Scene description</span>
+              <textarea
+                className="textarea"
+                value={sceneDraft.location_description}
+                disabled={isSavingScene}
+                onChange={(event) => updateSceneDraft("location_description", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Your position</span>
+              <input
+                className="input"
+                value={sceneDraft.user_position}
+                disabled={isSavingScene}
+                onChange={(event) => updateSceneDraft("user_position", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Character position</span>
+              <input
+                className="input"
+                value={sceneDraft.character_position}
+                disabled={isSavingScene}
+                onChange={(event) => updateSceneDraft("character_position", event.target.value)}
+              />
+            </label>
+            {sceneError ? <p className="muted">{sceneError}</p> : null}
+            <button className="button" type="submit" disabled={isSavingScene}>
+              {isSavingScene ? "Saving..." : "Save scene"}
+            </button>
+          </form>
+        ) : (
+          <p className="muted">Loading scene...</p>
         )}
       </section>
 

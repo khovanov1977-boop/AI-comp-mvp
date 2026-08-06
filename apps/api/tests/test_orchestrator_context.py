@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.character import Character, CharacterProfile, CharacterState
+from app.models.character import Character, CharacterProfile, CharacterScene, CharacterState
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.user import User
@@ -136,6 +136,14 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertTrue(context.user_context.weekday)
         self.assertTrue(context.user_context.time_of_day)
         self.assertTrue(context.user_context.daylight_context)
+        self.assertEqual(context.scene_context.presence_mode, "remote_chat")
+        self.assertEqual(context.scene_context.location_name, "Private chat")
+        self.assertFalse(context.scene_context.can_use_physical_touch)
+        self.assertFalse(context.scene_context.can_share_immediate_physical_space)
+        self.assertIn("Remote chat", context.world_state.reality_summary)
+        self.assertEqual(context.world_state.location_type, "remote_chat")
+        self.assertEqual(context.world_state.posture_summary, "separate_places")
+        self.assertIn("impossible", context.world_state.physical_touch_policy)
         self.assertEqual(set(context.memory.keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(context.memory["preference"][0].content, "likes tea")
         self.assertEqual([message.content for message in context.recent_messages], ["hello", "hi"])
@@ -213,6 +221,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["state"]["mood"], "curious")
         self.assertEqual(payload["user_context"]["city"], "Moscow")
         self.assertEqual(payload["user_context"]["timezone"], "Europe/Moscow")
+        self.assertEqual(payload["scene_context"]["presence_mode"], "remote_chat")
+        self.assertEqual(payload["scene_context"]["location_name"], "Private chat")
+        self.assertEqual(payload["world_state"]["location_type"], "remote_chat")
         self.assertEqual(set(payload["memory"].keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
@@ -243,6 +254,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("current_user_weekday:", prompt.system)
         self.assertIn("current_user_time_of_day:", prompt.system)
         self.assertIn("current_user_daylight_context:", prompt.system)
+        self.assertIn("presence_mode: remote_chat", prompt.system)
+        self.assertIn("location_name: Private chat", prompt.system)
+        self.assertIn("Current reality / world state", prompt.system)
+        self.assertIn("reality_summary: Remote chat", prompt.system)
+        self.assertIn("physical_touch_policy:", prompt.system)
+        self.assertIn("Before replying, silently check", prompt.system)
         self.assertIn("personality_description: Warm and thoughtful", prompt.system)
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
@@ -263,7 +280,32 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Use current_user_time_of_day and current_user_daylight_context", prompt.system)
         self.assertIn("Do not suggest sunset", prompt.system)
         self.assertIn("do not suggest immediate in-person activities together", prompt.system)
+        self.assertIn("Treat world_state as the current reality", prompt.system)
+        self.assertIn("Do not invent a different place", prompt.system)
+        self.assertIn("If the user asks where you are", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_same_place_scene_allows_physical_presence_in_context(self) -> None:
+        self.character.scene = CharacterScene(
+            presence_mode="same_place",
+            location_name="Park bench",
+            location_description="The user and character are sitting together on a bench in the park.",
+            user_position="sitting on the bench",
+            character_position="sitting on the same bench",
+        )
+        self.db.add(self.character)
+        self.db.commit()
+
+        context = build_orchestrator_context(self.db, self.character, "we are here")
+
+        self.assertEqual(context.scene_context.presence_mode, "same_place")
+        self.assertEqual(context.scene_context.location_name, "Park bench")
+        self.assertTrue(context.scene_context.can_use_physical_touch)
+        self.assertTrue(context.scene_context.can_share_immediate_physical_space)
+        self.assertIn("Same physical scene", context.world_state.reality_summary)
+        self.assertEqual(context.world_state.location_type, "outdoor_place")
+        self.assertEqual(context.world_state.posture_summary, "seated")
+        self.assertIn("possible", context.world_state.physical_touch_policy)
 
     def test_timezone_can_be_inferred_from_city(self) -> None:
         self.assertEqual(infer_timezone("Ухта", "Россия"), "Europe/Moscow")

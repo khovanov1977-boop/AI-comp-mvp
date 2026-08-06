@@ -53,5 +53,13 @@ export type CompanionContext = {
     timezone: string;
     language: string;
   };
+  scene_context: {
+    character_id: string;
+    presence_mode: "remote_chat" | "same_place" | "virtual_roleplay";
+    location_name: string;
+    location_description: string;
+    user_position: string;
+    character_position: string;
+  };
   memories: Memory[];
 };

@@ -10,9 +10,12 @@ from app.schemas.orchestrator import (
     OrchestratorMemoryItem,
     OrchestratorMessageContext,
     OrchestratorProfileContext,
+    OrchestratorSceneContext,
     OrchestratorStateContext,
     OrchestratorUserContext,
+    OrchestratorWorldStateContext,
 )
+from app.services.scene_service import get_or_create_scene
 from app.services.time_context import (
     DEFAULT_TIMEZONE,
     describe_daylight_context,
@@ -20,6 +23,7 @@ from app.services.time_context import (
     get_local_datetime,
     infer_timezone,
 )
+from app.services.world_state import build_world_state
 
 
 RECENT_MESSAGE_LIMIT = 12
@@ -40,6 +44,7 @@ def build_orchestrator_context(
     user_country = user.country if user else ""
     user_timezone = infer_timezone(user_city, user_country, user.timezone if user and user.timezone else DEFAULT_TIMEZONE)
     local_datetime = get_local_datetime(user_timezone)
+    scene = get_or_create_scene(db, character)
 
     recent_messages = list(
         db.scalars(
@@ -70,6 +75,17 @@ def build_orchestrator_context(
             )
             for memory in memories
         ]
+
+    scene_context = OrchestratorSceneContext(
+        presence_mode=scene.presence_mode,
+        location_name=scene.location_name,
+        location_description=scene.location_description,
+        user_position=scene.user_position,
+        character_position=scene.character_position,
+        can_use_physical_touch=scene.presence_mode in {"same_place", "virtual_roleplay"},
+        can_share_immediate_physical_space=scene.presence_mode in {"same_place", "virtual_roleplay"},
+    )
+    world_state = build_world_state(scene_context)
 
     return OrchestratorContext(
         character_id=character.id,
@@ -106,6 +122,8 @@ def build_orchestrator_context(
             time_of_day=describe_time_of_day(local_datetime.hour),
             daylight_context=describe_daylight_context(local_datetime.hour),
         ),
+        scene_context=scene_context,
+        world_state=OrchestratorWorldStateContext(**world_state),
         memory=memories_by_category,
         recent_messages=[
             OrchestratorMessageContext(

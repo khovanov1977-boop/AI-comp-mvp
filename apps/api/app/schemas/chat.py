@@ -56,7 +56,17 @@ class UserContextRead(BaseModel):
     language: str
 
 
+class SceneContextRead(BaseModel):
+    character_id: str
+    presence_mode: str
+    location_name: str
+    location_description: str
+    user_position: str
+    character_position: str
+
+
 class CompanionContextRead(BaseModel):
     character_state: CharacterStateRead
     user_context: UserContextRead
+    scene_context: SceneContextRead
     memories: list[MemoryRead]

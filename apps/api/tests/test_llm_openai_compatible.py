@@ -17,8 +17,10 @@ from app.schemas.orchestrator import (
     OrchestratorMemoryItem,
     OrchestratorMessageContext,
     OrchestratorProfileContext,
+    OrchestratorSceneContext,
     OrchestratorStateContext,
     OrchestratorUserContext,
+    OrchestratorWorldStateContext,
 )
 
 
@@ -53,6 +55,24 @@ def make_context() -> OrchestratorContext:
             weekday="Monday",
             time_of_day="daytime",
             daylight_context="daylight is generally plausible",
+        ),
+        scene_context=OrchestratorSceneContext(
+            presence_mode="remote_chat",
+            location_name="Private chat",
+            location_description="Remote chat from separate places",
+            user_position="at home",
+            character_position="at home",
+            can_use_physical_touch=False,
+            can_share_immediate_physical_space=False,
+        ),
+        world_state=OrchestratorWorldStateContext(
+            reality_summary="Remote chat. The user and character are not in the same physical space.",
+            location_type="remote_chat",
+            posture_summary="separate_places",
+            physical_touch_policy="impossible in real space; only imagined or roleplayed touch is possible",
+            shared_space_policy="no shared immediate physical space",
+            movement_policy="do not move into the user's room or walk together",
+            allowed_interaction_modes=["text chat", "emotional response"],
         ),
         memory={
             "user_fact": [OrchestratorMemoryItem(id="m1", content="born in December", importance=2, created_at=now)],

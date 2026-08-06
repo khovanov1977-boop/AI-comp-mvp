@@ -30,7 +30,7 @@ Focus:
 
 ## Sprint 1.8: Time + User Context
 
-Status: implemented locally.
+Status: completed and pushed.
 
 Focus:
 - Current date and weekday.
@@ -40,6 +40,8 @@ Focus:
 - Different-city behavior for remote relationships.
 
 ## Sprint 1.9: Scene / Place Awareness
+
+Status: completed and pushed.
 
 Focus:
 - Default scene is remote chat.

@@ -238,6 +238,15 @@ select {
   margin: 0;
 }
 
+.context-error {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  margin: 0;
+  padding: 10px 12px;
+}
+
 .composer {
   display: flex;
   gap: 10px;
@@ -324,6 +333,15 @@ select {
 .memory-list {
   display: grid;
   gap: 8px;
+}
+
+.scene-form {
+  display: grid;
+  gap: 10px;
+}
+
+.scene-form .textarea {
+  min-height: 72px;
 }
 
 .memory-groups {
