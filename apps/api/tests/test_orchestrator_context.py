@@ -19,6 +19,7 @@ from app.providers.llm_factory import get_llm_provider
 from app.providers.llm_mock import generate_reply
 from app.providers.llm_openai_compatible import LLMProviderError
 from app.services.character_engine import analyze_user_message, update_state_after_message
+from app.services.language_robustness import analyze_language_robustness
 from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
 from app.services.orchestrator_context import build_orchestrator_context
@@ -147,6 +148,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.world_state.location_type, "remote_chat")
         self.assertEqual(context.world_state.posture_summary, "separate_places")
         self.assertIn("impossible", context.world_state.physical_touch_policy)
+        self.assertFalse(context.language_context.has_colloquial_language)
+        self.assertEqual(context.language_context.slang_terms, {})
+        self.assertEqual(context.language_context.smileys, {})
+        self.assertEqual(context.language_context.typo_hints, {})
         self.assertEqual(set(context.memory.keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(context.memory["preference"][0].content, "likes tea")
         self.assertEqual([message.content for message in context.recent_messages], ["hello", "hi"])
@@ -204,6 +209,16 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(smile.mood, "warm")
         self.assertGreater(smile.trust_delta, 0)
 
+    def test_language_robustness_detects_slang_smileys_and_typos(self) -> None:
+        signal = analyze_language_robustness("Сорян, щас норм вайб :)")
+
+        self.assertTrue(signal.has_colloquial_language)
+        self.assertEqual(signal.slang_terms["сорян"], "sorry, informal")
+        self.assertEqual(signal.slang_terms["вайб"], "mood or atmosphere")
+        self.assertEqual(signal.smileys[":)"], "friendly warmth or a light smile")
+        self.assertEqual(signal.typo_hints["щас"], "сейчас")
+        self.assertIn("Do not correct", signal.guidance)
+
     def test_debug_endpoint_returns_structured_context(self) -> None:
         self.add_context_records()
 
@@ -236,6 +251,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["scene_context"]["presence_mode"], "remote_chat")
         self.assertEqual(payload["scene_context"]["location_name"], "Private chat")
         self.assertEqual(payload["world_state"]["location_type"], "remote_chat")
+        self.assertIn("language_context", payload)
+        self.assertFalse(payload["language_context"]["has_colloquial_language"])
         self.assertEqual(set(payload["memory"].keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
@@ -301,6 +318,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("reality_summary: Remote chat", prompt.system)
         self.assertIn("physical_touch_policy:", prompt.system)
         self.assertIn("Before replying, silently check", prompt.system)
+        self.assertIn("Language robustness context:", prompt.system)
+        self.assertIn("detected_slang_terms:", prompt.system)
+        self.assertIn("detected_smileys:", prompt.system)
+        self.assertIn("detected_typo_hints:", prompt.system)
         self.assertIn("personality_description: Warm and thoughtful", prompt.system)
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
@@ -332,6 +353,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("If the user asks where you are", prompt.system)
         self.assertIn("Never output tool calls", prompt.system)
         self.assertIn("<tool_call>", prompt.system)
+        self.assertIn("Understand slang, smileys, typos", prompt.system)
+        self.assertIn("Do not lecture the user about slang or spelling", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
 
     def test_response_sanitizer_removes_tool_call_artifacts(self) -> None:

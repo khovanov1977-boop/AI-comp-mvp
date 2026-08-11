@@ -14,6 +14,7 @@ from app.providers.llm_openai_compatible import (
 )
 from app.schemas.orchestrator import (
     OrchestratorContext,
+    OrchestratorLanguageContext,
     OrchestratorMemoryItem,
     OrchestratorMessageContext,
     OrchestratorProfileContext,
@@ -73,6 +74,13 @@ def make_context() -> OrchestratorContext:
             shared_space_policy="no shared immediate physical space",
             movement_policy="do not move into the user's room or walk together",
             allowed_interaction_modes=["text chat", "emotional response"],
+        ),
+        language_context=OrchestratorLanguageContext(
+            slang_terms={},
+            smileys={},
+            typo_hints={},
+            has_colloquial_language=False,
+            guidance="Interpret colloquial phrasing generously.",
         ),
         memory={
             "user_fact": [OrchestratorMemoryItem(id="m1", content="born in December", importance=2, created_at=now)],

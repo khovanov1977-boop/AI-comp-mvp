@@ -59,6 +59,14 @@ class OrchestratorWorldStateContext(BaseModel):
     allowed_interaction_modes: list[str]
 
 
+class OrchestratorLanguageContext(BaseModel):
+    slang_terms: dict[str, str]
+    smileys: dict[str, str]
+    typo_hints: dict[str, str]
+    has_colloquial_language: bool
+    guidance: str
+
+
 class OrchestratorMemoryItem(BaseModel):
     id: str
     content: str
@@ -83,6 +91,7 @@ class OrchestratorContext(BaseModel):
     user_context: OrchestratorUserContext
     scene_context: OrchestratorSceneContext
     world_state: OrchestratorWorldStateContext
+    language_context: OrchestratorLanguageContext
     memory: dict[str, list[OrchestratorMemoryItem]]
     recent_messages: list[OrchestratorMessageContext]
     current_user_message: str

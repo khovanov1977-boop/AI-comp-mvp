@@ -12,9 +12,11 @@ from app.schemas.orchestrator import (
     OrchestratorProfileContext,
     OrchestratorSceneContext,
     OrchestratorStateContext,
+    OrchestratorLanguageContext,
     OrchestratorUserContext,
     OrchestratorWorldStateContext,
 )
+from app.services.language_robustness import analyze_language_robustness
 from app.services.scene_service import get_or_create_scene
 from app.services.time_context import (
     DEFAULT_TIMEZONE,
@@ -86,6 +88,7 @@ def build_orchestrator_context(
         can_share_immediate_physical_space=scene.presence_mode in {"same_place", "virtual_roleplay"},
     )
     world_state = build_world_state(scene_context)
+    language_signal = analyze_language_robustness(current_user_message)
 
     return OrchestratorContext(
         character_id=character.id,
@@ -124,6 +127,13 @@ def build_orchestrator_context(
         ),
         scene_context=scene_context,
         world_state=OrchestratorWorldStateContext(**world_state),
+        language_context=OrchestratorLanguageContext(
+            slang_terms=language_signal.slang_terms,
+            smileys=language_signal.smileys,
+            typo_hints=language_signal.typo_hints,
+            has_colloquial_language=language_signal.has_colloquial_language,
+            guidance=language_signal.guidance,
+        ),
         memory=memories_by_category,
         recent_messages=[
             OrchestratorMessageContext(

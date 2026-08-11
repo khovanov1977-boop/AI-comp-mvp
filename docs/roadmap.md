@@ -63,6 +63,8 @@ Focus:
 
 ## Sprint 2.1: Slang, Typos, Language Robustness
 
+Status: completed and pushed.
+
 Focus:
 - Slang dictionary.
 - Typo and colloquial speech tolerance.

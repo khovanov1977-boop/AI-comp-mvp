@@ -34,6 +34,7 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     user_context = context.user_context
     scene_context = context.scene_context
     world_state = context.world_state
+    language_context = context.language_context
     user_name = profile.user_nickname or user_context.display_name or "the user"
     memory_lines = []
     for category, memories in context.memory.items():
@@ -60,6 +61,12 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- allowed_interaction_modes: {', '.join(world_state.allowed_interaction_modes)}",
         "Before replying, silently check that every physical action, place reference, posture, and movement matches the current world state.",
         "If the user's message conflicts with the world state, respond naturally from the current reality or ask to change the scene.",
+        "Language robustness context:",
+        f"- detected_slang_terms: {language_context.slang_terms or 'none'}",
+        f"- detected_smileys: {language_context.smileys or 'none'}",
+        f"- detected_typo_hints: {language_context.typo_hints or 'none'}",
+        f"- has_colloquial_language: {language_context.has_colloquial_language}",
+        f"- guidance: {language_context.guidance}",
         "User context:",
         f"- user_display_name: {user_context.display_name}",
         f"- user_city: {user_context.city}",
@@ -120,6 +127,10 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- If the user asks where you are, answer from world_state and scene_context.",
         "- In remote_chat mode, keep physical closeness virtual, imagined, or emotional rather than literal.",
         "- Reply naturally in the user's language unless the user asks otherwise.",
+        "- Understand slang, smileys, typos, missing punctuation, and colloquial speech as normal human chat.",
+        "- Do not lecture the user about slang or spelling. Use detected meanings quietly.",
+        "- Preserve the user's language register when appropriate, but keep the character's own voice.",
+        "- If a typo or slang term is unclear, ask a short natural clarification instead of pretending certainty.",
         "- Do not mechanically repeat or paraphrase the user's last sentence.",
         "- Do not recite profile, memory, state, or system fields. Use them quietly to shape the reply.",
         "- Never output tool calls, XML tags, hidden control text, <tool_call>, </tool_call>, wait <tool_call>, enter </tool_call>, or similar internal markup.",
