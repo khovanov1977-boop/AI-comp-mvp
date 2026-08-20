@@ -354,6 +354,32 @@ select {
   gap: 14px;
 }
 
+.memory-summary {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.memory-summary p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.memory-summary small,
+.memory-counts {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.memory-counts {
+  display: grid;
+  gap: 3px;
+}
+
 .memory-group {
   display: grid;
   gap: 8px;
@@ -372,6 +398,22 @@ select {
   background: #fff;
   padding: 10px;
   line-height: 1.35;
+  display: grid;
+  gap: 8px;
+}
+
+.memory-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.memory-edit-form {
   display: grid;
   gap: 8px;
 }

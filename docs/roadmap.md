@@ -72,7 +72,30 @@ Focus:
 - Language notes for user and character.
 - Natural responses without pedantic correction.
 
-## Sprint 2.2+: Web Tools / Internet Access
+## Sprint 2.2: Memory Quality v2
+
+Status: completed and pushed.
+
+Focus:
+- Reduce noisy automatic memories.
+- Normalize durable user facts such as name, birthday, birthplace, and residence.
+- Update existing identity facts instead of creating duplicates.
+- Keep old records unchanged and avoid migrations.
+
+## Sprint 2.3: Memory Editing UI
+
+Status: completed and pushed.
+
+Focus:
+- Edit saved memory items from the chat side panel.
+- Update memory category, content, and importance.
+- Show memory importance in the UI.
+- Show memory count, visible working-set limit, and category counters.
+- Keep automatic memory extraction unchanged.
+
+## Backlog: Web Tools / Internet Access
+
+Status: deferred.
 
 Focus:
 - Web search and browsing tools.

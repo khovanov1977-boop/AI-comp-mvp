@@ -1,5 +1,6 @@
 import re
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,40 @@ CITY_PATTERN = re.compile(
     r"(?:\u0432\s+)?(?:\u0433\u043e\u0440\u043e\u0434\u0435|\u0433\u043e\u0440\u043e\u0434|\u0433\.)\s+([^\s,.!?]+(?:[\s-][^\s,.!?]+)?)",
     re.IGNORECASE,
 )
+LIVING_IN_PATTERN = re.compile(
+    r"\b(?:\u0436\u0438\u0432\u0443|\u0436\u0438\u043b|\u0436\u0438\u043b\u0430)\s+\u0432\s+([^\s,.!?]+(?:[\s-][^\s,.!?]+)?)",
+    re.IGNORECASE,
+)
+BORN_IN_PATTERN = re.compile(
+    r"\b(?:\u0440\u043e\u0434\u0438\u043b\u0441\u044f|\u0440\u043e\u0434\u0438\u043b\u0430\u0441\u044c|\u0440\u043e\u0434\u0438\u043b\u0441\u044f\s+\u044f|\u0440\u043e\u0434\u0438\u043b\u0430\u0441\u044c\s+\u044f)\s+\u0432\s+([^\s,.!?]+(?:[\s-][^\s,.!?]+)?)",
+    re.IGNORECASE,
+)
+USER_NAME_PATTERN = re.compile(
+    r"(?:\u043c\u0435\u043d\u044f\s+\u0437\u043e\u0432\u0443\u0442|\u0437\u043e\u0432\u0438\s+\u043c\u0435\u043d\u044f)\s+([^\s,.!?]+)",
+    re.IGNORECASE,
+)
+
+DURABLE_FACT_MARKERS = [
+    "\u043c\u0435\u043d\u044f \u0437\u043e\u0432\u0443\u0442",
+    "\u0437\u043e\u0432\u0438 \u043c\u0435\u043d\u044f",
+    "\u044f \u0436\u0438\u0432\u0443",
+    "\u044f \u0436\u0438\u043b",
+    "\u044f \u0436\u0438\u043b\u0430",
+    "\u044f \u0440\u043e\u0434\u0438\u043b",
+    "\u043c\u043e\u0439 \u0434\u0435\u043d\u044c \u0440\u043e\u0436\u0434\u0435\u043d",
+    "\u0434\u0430\u0442\u0430 \u0440\u043e\u0436\u0434\u0435\u043d",
+    "\u044f \u0440\u0430\u0431\u043e\u0442\u0430\u044e",
+    "\u043c\u043e\u044f \u0440\u0430\u0431\u043e\u0442\u0430",
+    "\u043c\u043e\u0439 \u0431\u0440\u0430\u0442",
+    "\u043c\u043e\u044f \u0441\u0435\u0441\u0442\u0440\u0430",
+    "my name is",
+    "call me",
+    "i live",
+    "i lived",
+    "i was born",
+    "my birthday",
+    "i work",
+]
 
 MEMORY_REJECTION_MARKERS = [
     "\u043d\u0435 \u0433\u043e\u0432\u043e\u0440\u0438\u043b",
@@ -106,6 +141,12 @@ def normalize_birth_date(content: str) -> str | None:
 def normalize_location_fact(content: str) -> str | None:
     normalized = content.lower()
     city_match = CITY_PATTERN.search(content)
+    born_match = BORN_IN_PATTERN.search(content)
+    living_match = LIVING_IN_PATTERN.search(content)
+    if born_match:
+        city_match = born_match
+    elif not city_match and living_match:
+        city_match = living_match
     if not city_match:
         return None
 
@@ -125,7 +166,20 @@ def normalize_location_fact(content: str) -> str | None:
     return None
 
 
+def normalize_user_name(content: str) -> str | None:
+    name_match = USER_NAME_PATTERN.search(content)
+    if not name_match:
+        return None
+    name = name_match.group(1).strip(" .,!?:;")
+    if not name:
+        return None
+    return f"\u0438\u043c\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f {name}"
+
+
 def summarize_memory(content: str) -> str:
+    normalized_user_name = normalize_user_name(content)
+    if normalized_user_name:
+        return normalized_user_name
     normalized_birth_date = normalize_birth_date(content)
     if normalized_birth_date:
         return normalized_birth_date
@@ -148,9 +202,31 @@ def categorize_memory(content: str, summary: str) -> str:
     return "user_fact"
 
 
+def memory_identity(summary: str) -> str | None:
+    identity_prefixes = (
+        "\u0438\u043c\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f ",
+        "\u0434\u0430\u0442\u0430 \u0440\u043e\u0436\u0434\u0435\u043d\u0438\u044f ",
+        "\u043c\u0435\u0441\u0442\u043e \u0440\u043e\u0436\u0434\u0435\u043d\u0438\u044f ",
+        "\u043c\u0435\u0441\u0442\u043e \u0436\u0438\u0442\u0435\u043b\u044c\u0441\u0442\u0432\u0430 ",
+    )
+    for prefix in identity_prefixes:
+        if summary.startswith(prefix):
+            return prefix
+    return None
+
+
+def is_durable_fact(content: str, summary: str) -> bool:
+    normalized = f" {content.lower()} "
+    if memory_identity(summary):
+        return True
+    return any(marker in normalized for marker in DURABLE_FACT_MARKERS)
+
+
 def should_store_memory(content: str) -> bool:
     normalized = f" {content.lower()} "
     if any(marker in normalized for marker in MEMORY_REJECTION_MARKERS):
+        return False
+    if "?" in content and not any(marker in normalized for marker in DURABLE_FACT_MARKERS):
         return False
     return len(content.strip()) >= 12 and any(trigger in normalized for trigger in MEMORY_TRIGGERS)
 
@@ -169,11 +245,25 @@ def remember_user_message(db: Session, character_id: str, content: str) -> Memor
     if existing:
         return existing
 
+    identity = memory_identity(summary)
+    if identity:
+        existing_identity = db.scalar(
+            select(Memory).where(
+                Memory.character_id == character_id,
+                Memory.content.startswith(identity),
+            )
+        )
+        if existing_identity:
+            existing_identity.content = summary
+            existing_identity.memory_type = categorize_memory(content, summary)
+            existing_identity.importance = max(existing_identity.importance, 3)
+            return existing_identity
+
     memory = Memory(
         character_id=character_id,
         memory_type=categorize_memory(content, summary),
         content=summary,
-        importance=2,
+        importance=3 if is_durable_fact(content, summary) else 2,
     )
     db.add(memory)
     return memory
@@ -188,3 +278,12 @@ def list_character_memories(db: Session, character_id: str, limit: int = 8) -> l
             .limit(limit)
         )
     )
+
+
+def get_memory_counts_by_category(db: Session, character_id: str) -> dict[str, int]:
+    rows = db.execute(
+        select(Memory.memory_type, func.count(Memory.id))
+        .where(Memory.character_id == character_id)
+        .group_by(Memory.memory_type)
+    ).all()
+    return {memory_type: int(count) for memory_type, count in rows}

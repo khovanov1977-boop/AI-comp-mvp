@@ -61,5 +61,13 @@ export type CompanionContext = {
     user_position: string;
     character_position: string;
   };
+  memory_meta: {
+    total_count: number;
+    visible_count: number;
+    visible_limit: number;
+    counts_by_category: Record<string, number>;
+    extraction_mode: "rule_based" | string;
+    note: string;
+  };
   memories: Memory[];
 };

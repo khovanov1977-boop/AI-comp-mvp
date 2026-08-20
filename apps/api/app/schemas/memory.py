@@ -19,6 +19,12 @@ class MemoryCreate(BaseModel):
     importance: int = 2
 
 
+class MemoryUpdate(BaseModel):
+    memory_type: str | None = None
+    content: str | None = None
+    importance: int | None = None
+
+
 class MemoryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

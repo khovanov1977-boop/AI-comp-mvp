@@ -188,6 +188,83 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(user_fact.memory_type, "user_fact")
         self.assertIsNone(ignored)
 
+    def test_memory_extraction_ignores_questions_without_durable_facts(self) -> None:
+        memory = remember_user_message(
+            self.db,
+            self.character.id,
+            "\u043a\u0430\u043a\u043e\u0435 \u044d\u0442\u043e \u0431\u0443\u0434\u0435\u0442 \u0447\u0438\u0441\u043b\u043e \u0431\u0443\u0434\u0443\u0449\u0430\u044f \u0441\u0443\u0431\u0431\u043e\u0442\u0430?",
+        )
+
+        self.assertIsNone(memory)
+
+    def test_memory_extraction_normalizes_name_and_location_facts(self) -> None:
+        name = remember_user_message(self.db, self.character.id, "\u043c\u0435\u043d\u044f \u0437\u043e\u0432\u0443\u0442 \u041b\u0435\u0445\u0430")
+        born = remember_user_message(self.db, self.character.id, "\u044f \u0440\u043e\u0434\u0438\u043b\u0441\u044f \u0432 \u0423\u0445\u0442\u0435")
+        lived = remember_user_message(
+            self.db,
+            self.character.id,
+            "\u0434\u043e 17 \u043b\u0435\u0442 \u044f \u0436\u0438\u043b \u0432 \u0433\u043e\u0440\u043e\u0434\u0435 \u0423\u0445\u0442\u0430",
+        )
+
+        self.assertEqual(name.content, "\u0438\u043c\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f \u041b\u0435\u0445\u0430")
+        self.assertEqual(name.importance, 3)
+        self.assertEqual(born.content, "\u043c\u0435\u0441\u0442\u043e \u0440\u043e\u0436\u0434\u0435\u043d\u0438\u044f \u0423\u0445\u0442\u0435")
+        self.assertEqual(born.memory_type, "life_event")
+        self.assertEqual(
+            lived.content,
+            "\u043c\u0435\u0441\u0442\u043e \u0436\u0438\u0442\u0435\u043b\u044c\u0441\u0442\u0432\u0430 \u0434\u043e 17 \u043b\u0435\u0442 \u0423\u0445\u0442\u0430",
+        )
+
+    def test_memory_extraction_updates_existing_identity_fact(self) -> None:
+        first = remember_user_message(self.db, self.character.id, "\u043c\u0435\u043d\u044f \u0437\u043e\u0432\u0443\u0442 \u041b\u0435\u0445\u0430")
+        self.db.commit()
+        second = remember_user_message(self.db, self.character.id, "\u0437\u043e\u0432\u0438 \u043c\u0435\u043d\u044f \u0410\u043b\u0435\u043a\u0441\u0435\u0439")
+        self.db.commit()
+
+        memories = self.db.query(Memory).filter(Memory.character_id == self.character.id).all()
+
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(second.content, "\u0438\u043c\u044f \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f \u0410\u043b\u0435\u043a\u0441\u0435\u0439")
+        self.assertEqual(len(memories), 1)
+
+    def test_memory_update_endpoint_edits_content_type_and_importance(self) -> None:
+        memory = Memory(
+            character_id=self.character.id,
+            memory_type="user_fact",
+            content="old memory",
+            importance=2,
+        )
+        self.db.add(memory)
+        self.db.commit()
+        memory_id = memory.id
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            response = client.patch(
+                f"/memories/{memory_id}",
+                json={
+                    "memory_type": "preference",
+                    "content": "updated memory",
+                    "importance": 9,
+                },
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["memory_type"], "preference")
+        self.assertEqual(payload["content"], "updated memory")
+        self.assertEqual(payload["importance"], 5)
+
     def test_state_update_logic_is_stable_and_capped(self) -> None:
         self.character.state.trust_level = 100
         self.character.state.attachment_level = 99
@@ -256,6 +333,32 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(set(payload["memory"].keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(payload["recent_messages"][0]["content"], "hello")
         self.assertEqual(payload["current_user_message"], "endpoint message")
+
+    def test_companion_context_returns_memory_meta(self) -> None:
+        self.add_context_records()
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            response = client.get(f"/chat/{self.character.id}/context")
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["memory_meta"]["total_count"], 5)
+        self.assertEqual(payload["memory_meta"]["visible_count"], 5)
+        self.assertEqual(payload["memory_meta"]["visible_limit"], 8)
+        self.assertEqual(payload["memory_meta"]["extraction_mode"], "rule_based")
+        self.assertEqual(payload["memory_meta"]["counts_by_category"]["preference"], 1)
+        self.assertIn("local rules", payload["memory_meta"]["note"])
 
     def test_character_creation_creates_default_scene(self) -> None:
         def override_get_db():

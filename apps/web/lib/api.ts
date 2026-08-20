@@ -100,6 +100,20 @@ export function deleteMemory(memoryId: string) {
   });
 }
 
+export function updateMemory(
+  memoryId: string,
+  input: {
+    memory_type?: Memory["memory_type"];
+    content?: string;
+    importance?: number;
+  },
+) {
+  return request<Memory>(`/memories/${memoryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
 export function updateScene(input: CompanionContext["scene_context"]) {
   return request<CompanionContext["scene_context"]>("/scenes", {
     method: "PUT",

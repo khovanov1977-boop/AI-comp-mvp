@@ -65,8 +65,18 @@ class SceneContextRead(BaseModel):
     character_position: str
 
 
+class MemoryMetaRead(BaseModel):
+    total_count: int
+    visible_count: int
+    visible_limit: int
+    counts_by_category: dict[str, int]
+    extraction_mode: str
+    note: str
+
+
 class CompanionContextRead(BaseModel):
     character_state: CharacterStateRead
     user_context: UserContextRead
     scene_context: SceneContextRead
+    memory_meta: MemoryMetaRead
     memories: list[MemoryRead]

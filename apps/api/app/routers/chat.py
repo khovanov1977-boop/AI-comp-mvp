@@ -12,15 +12,17 @@ from app.schemas.chat import (
     ChatRetryRequest,
     CharacterStateRead,
     CompanionContextRead,
+    MemoryMetaRead,
     MessageRead,
     SceneContextRead,
     UserContextRead,
 )
-from app.services.memory_service import list_character_memories
+from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_service import get_or_create_scene
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+MEMORY_CONTEXT_LIMIT = 8
 
 
 @router.get("/{character_id}", response_model=list[MessageRead])
@@ -46,6 +48,9 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
 
     state = character.state
     scene = get_or_create_scene(db, character)
+    memories = list_character_memories(db, character_id, limit=MEMORY_CONTEXT_LIMIT)
+    counts_by_category = get_memory_counts_by_category(db, character_id)
+    total_count = sum(counts_by_category.values())
     return CompanionContextRead(
         character_state=CharacterStateRead(
             mood=state.mood,
@@ -68,7 +73,15 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
             user_position=scene.user_position,
             character_position=scene.character_position,
         ),
-        memories=list_character_memories(db, character_id),
+        memory_meta=MemoryMetaRead(
+            total_count=total_count,
+            visible_count=len(memories),
+            visible_limit=MEMORY_CONTEXT_LIMIT,
+            counts_by_category=counts_by_category,
+            extraction_mode="rule_based",
+            note="Automatic memory is extracted by local rules from user messages. The panel shows the current working set sorted by importance and recency.",
+        ),
+        memories=memories,
     )
 
 

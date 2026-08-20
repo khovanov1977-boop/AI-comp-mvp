@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Character, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
-import { createMemory, deleteMemory, updateScene } from "../lib/api";
+import { createMemory, deleteMemory, updateMemory, updateScene } from "../lib/api";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
   { value: "user_fact", label: "User facts" },
@@ -87,10 +87,15 @@ export function CompanionPanel({
   const userContext = context?.user_context;
   const sceneContext = context?.scene_context;
   const memories = context?.memories ?? [];
+  const memoryMeta = context?.memory_meta;
   const [memoryType, setMemoryType] = useState<Memory["memory_type"]>("user_fact");
   const [memoryContent, setMemoryContent] = useState("");
   const [isSavingMemory, setIsSavingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState("");
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingMemoryType, setEditingMemoryType] = useState<Memory["memory_type"]>("user_fact");
+  const [editingMemoryContent, setEditingMemoryContent] = useState("");
+  const [editingMemoryImportance, setEditingMemoryImportance] = useState(2);
   const [sceneDraft, setSceneDraft] = useState<CompanionContext["scene_context"] | null>(null);
   const [isSavingScene, setIsSavingScene] = useState(false);
   const [sceneError, setSceneError] = useState("");
@@ -106,6 +111,49 @@ export function CompanionPanel({
       onMemoryChange();
     } catch {
       setMemoryError("Could not delete memory.");
+    }
+  }
+
+  function startMemoryEdit(memory: Memory) {
+    setMemoryError("");
+    setEditingMemoryId(memory.id);
+    setEditingMemoryType(memory.memory_type);
+    setEditingMemoryContent(memory.content);
+    setEditingMemoryImportance(memory.importance);
+  }
+
+  function cancelMemoryEdit() {
+    setEditingMemoryId(null);
+    setEditingMemoryContent("");
+    setEditingMemoryImportance(2);
+  }
+
+  async function submitMemoryEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingMemoryId) {
+      return;
+    }
+
+    const content = editingMemoryContent.trim();
+    if (!content) {
+      setMemoryError("Memory cannot be empty.");
+      return;
+    }
+
+    setIsSavingMemory(true);
+    setMemoryError("");
+    try {
+      await updateMemory(editingMemoryId, {
+        memory_type: editingMemoryType,
+        content,
+        importance: editingMemoryImportance,
+      });
+      cancelMemoryEdit();
+      onMemoryChange();
+    } catch {
+      setMemoryError("Could not update memory.");
+    } finally {
+      setIsSavingMemory(false);
     }
   }
 
@@ -288,6 +336,25 @@ export function CompanionPanel({
 
       <section className="stack">
         <h2 className="panel-title">Memory</h2>
+        <div className="memory-summary">
+          <p>
+            {memoryMeta
+              ? `${memoryMeta.visible_count} of ${memoryMeta.total_count} saved memories shown`
+              : `${memories.length} saved memories shown`}
+          </p>
+          <small>
+            Auto memory is rule-based. The panel shows up to {memoryMeta?.visible_limit ?? 8} items by importance and recency.
+          </small>
+          {memoryMeta ? (
+            <div className="memory-counts">
+              {MEMORY_CATEGORIES.map((category) => (
+                <span key={category.value}>
+                  {category.label}: {memoryMeta.counts_by_category[category.value] ?? 0}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {memories.length > 0 ? (
           <div className="memory-groups">
             {MEMORY_CATEGORIES.map((category) => {
@@ -302,10 +369,61 @@ export function CompanionPanel({
                   <div className="memory-list">
                     {categoryMemories.map((memory) => (
                       <div className="memory-item" key={memory.id}>
-                        <span>{memory.content}</span>
-                        <button className="text-button" type="button" onClick={() => removeMemory(memory.id)}>
-                          Delete
-                        </button>
+                        {editingMemoryId === memory.id ? (
+                          <form className="memory-edit-form" onSubmit={submitMemoryEdit}>
+                            <select
+                              className="select"
+                              value={editingMemoryType}
+                              disabled={isSavingMemory}
+                              onChange={(event) => setEditingMemoryType(event.target.value as Memory["memory_type"])}
+                            >
+                              {MEMORY_CATEGORIES.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <textarea
+                              className="textarea"
+                              value={editingMemoryContent}
+                              disabled={isSavingMemory}
+                              onChange={(event) => setEditingMemoryContent(event.target.value)}
+                            />
+                            <label className="field">
+                              <span className="label">Importance</span>
+                              <input
+                                className="input"
+                                type="number"
+                                min="1"
+                                max="5"
+                                value={editingMemoryImportance}
+                                disabled={isSavingMemory}
+                                onChange={(event) => setEditingMemoryImportance(Number(event.target.value))}
+                              />
+                            </label>
+                            <div className="memory-actions">
+                              <button className="text-button" type="submit" disabled={isSavingMemory}>
+                                Save
+                              </button>
+                              <button className="text-button" type="button" disabled={isSavingMemory} onClick={cancelMemoryEdit}>
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            <span>{memory.content}</span>
+                            <small className="memory-meta">Importance {memory.importance}</small>
+                            <div className="memory-actions">
+                              <button className="text-button" type="button" onClick={() => startMemoryEdit(memory)}>
+                                Edit
+                              </button>
+                              <button className="text-button" type="button" onClick={() => removeMemory(memory.id)}>
+                                Delete
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
