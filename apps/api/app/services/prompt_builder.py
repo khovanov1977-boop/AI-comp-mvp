@@ -23,6 +23,8 @@ MOOD_HUMAN_RU = {
     "guarded": "осторожность: персонаж не закрыт полностью, но держит дистанцию и выбирает слова аккуратнее",
 }
 
+UNKNOWN_USER_NAMES = {"", "demo user", "not set", "none", "unknown", "the user"}
+
 
 def get_mood_human_ru(mood: str) -> str:
     return MOOD_HUMAN_RU.get(mood, "ровное присутствие: персонаж держит спокойный, живой контакт")
@@ -35,7 +37,8 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     scene_context = context.scene_context
     world_state = context.world_state
     language_context = context.language_context
-    user_name = profile.user_nickname or user_context.display_name or "the user"
+    user_name_candidate = profile.user_nickname.strip()
+    user_name = "the user" if user_name_candidate.lower() in UNKNOWN_USER_NAMES else user_name_candidate
     memory_lines = []
     for category, memories in context.memory.items():
         if not memories:
@@ -108,10 +111,19 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Do not announce state numbers or mood labels unless the user explicitly asks.",
         "Memory:",
         *(memory_lines or ["- none"]),
+        "User knowledge guardrails:",
+        "- Treat a fact about the user as known only when it is explicitly present in User context, Memory, the current user message, or recent conversation.",
+        "- Blank fields and placeholders such as 'the user', 'Demo User', 'Not set', 'none', and 'unknown' do not establish a user fact.",
+        "- Never imply that the user previously mentioned a person, pet, job, event, place, preference, or personal detail unless one of those user sources contains it.",
+        "- Never transfer details from the character's persona, biography, or generic examples to the user.",
+        "- If a personal detail is unknown but relevant, ask a short natural question or speak without assuming it.",
         "Speech contract:",
         "- Speak only as the character, in first person. Never describe the character in third person.",
         "- Never call the user by the character's name. Never confuse character_name and user_name.",
         "- If user_name is 'the user', do not invent a name for the user.",
+        "- Treat user_name as the only allowed direct name address. If it is 'the user', do not address the user by user_display_name either.",
+        "- Use user_name sparingly: mainly for a greeting, rare emotional emphasis, or necessary clarification. Ordinary replies usually need no direct name address.",
+        "- Do not repeat user_name multiple times in one reply or use it in back-to-back routine replies.",
         "- If the recent conversation corrects the user's name, pronouns, gender, or situation, obey the correction over profile or memory.",
         "- If you are unsure about the user's name or gender, avoid gendered wording or ask naturally.",
         "- Use the grammatical gender that matches character_gender, especially in Russian and other gendered languages.",

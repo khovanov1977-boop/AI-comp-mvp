@@ -57,11 +57,25 @@ function getLanguageLabel(language: string) {
   return language || "Not set";
 }
 
-function StatRow({ label, value }: { label: string; value: number }) {
+function InfoHint({ label, text }: { label: string; text: string }) {
+  return (
+    <span className="info-hint" tabIndex={0} aria-label={`${label}: ${text}`}>
+      <span aria-hidden="true">?</span>
+      <span className="info-tooltip" role="tooltip">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function StatRow({ label, value, description }: { label: string; value: number; description: string }) {
   return (
     <div className="stat-row">
       <div className="stat-label">
-        <span>{label}</span>
+        <span className="label-with-hint">
+          {label}
+          <InfoHint label={label} text={description} />
+        </span>
         <strong>{value}</strong>
       </div>
       <div className="stat-track">
@@ -225,13 +239,31 @@ export function CompanionPanel({
         {state ? (
           <>
             <div className="mood-row">
-              <span>Настроение</span>
+              <span className="label-with-hint">
+                Настроение
+                <InfoHint
+                  label="Настроение"
+                  text="Текущий эмоциональный тон персонажа. Он влияет на мягкость, осторожность и инициативность ответа."
+                />
+              </span>
               <strong>{moodLabel?.label}</strong>
               <small>{moodLabel?.description}</small>
             </div>
-            <StatRow label="Доверие" value={state.trust_level} />
-            <StatRow label="Близость" value={state.attachment_level} />
-            <StatRow label="Ресурс" value={state.energy_level} />
+            <StatRow
+              label="Доверие"
+              value={state.trust_level}
+              description="Насколько безопасно и открыто персонаж чувствует себя рядом с пользователем."
+            />
+            <StatRow
+              label="Близость"
+              value={state.attachment_level}
+              description="Насколько сильны эмоциональная привязанность и ощущение близкого контакта."
+            />
+            <StatRow
+              label="Ресурс"
+              value={state.energy_level}
+              description="Сколько у персонажа энергии для активного, живого общения прямо сейчас."
+            />
           </>
         ) : (
           <p className="muted">Состояние загружается...</p>

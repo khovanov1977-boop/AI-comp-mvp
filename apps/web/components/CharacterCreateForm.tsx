@@ -76,7 +76,8 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
         >
           <option value="companion">Companion</option>
           <option value="friend">Friend</option>
-          <option value="mentor">Mentor</option>
+          <option value="colleague">Colleague</option>
+          <option value="relative">Relative</option>
           <option value="romantic">Romantic</option>
         </select>
       </label>
@@ -139,6 +140,10 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
       <div className="form-section">
         <h3>About you</h3>
         <p className="muted">This helps the character understand your local context.</p>
+        <p className="privacy-hint">
+          City and country are optional. If you do not want the character to know this information, leave those fields
+          blank. You can share it later in conversation.
+        </p>
       </div>
       <label className="field">
         <span className="label">Your city</span>

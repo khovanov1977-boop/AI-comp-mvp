@@ -93,6 +93,57 @@ Focus:
 - Show memory count, visible working-set limit, and category counters.
 - Keep automatic memory extraction unchanged.
 
+## Sprint 2.4: Conversation Guardrails + UX Clarity
+
+Status: completed and pushed.
+
+Focus:
+- Character must not invent unknown facts about the user.
+- Reduce overuse of the user's name in ordinary replies.
+- Add relationship modes `colleague` and `relative`; remove `mentor` from new character creation.
+- Add privacy hint for optional user information during character creation.
+- Add UI explanations for mood/state parameters such as trust, closeness, and energy.
+
+## Sprint 2.5: Character Personality Equalizer
+
+Status: planned.
+
+Focus:
+- Add a compact set of adjustable character traits.
+- Keep the trait set expressive but not exhausting for the user.
+- Include trait values in orchestrator context and prompt builder.
+- Make character behavior follow configured personality traits.
+
+## Sprint 2.6: User Profile v2 + Name Forms
+
+Status: planned.
+
+Focus:
+- Add optional user profile fields such as age.
+- Support formal, preferred, casual, and vocative name forms.
+- Improve Russian address patterns such as `Алексей`, `Леша`, `Леха`, `Леш`.
+- Keep private information optional and user-controlled.
+
+## Sprint 2.7: Response Length + Style Control
+
+Status: planned.
+
+Focus:
+- Let the user configure desired response length.
+- Ask the LLM to write within the selected length instead of cutting text after generation.
+- Avoid unfinished or abruptly truncated assistant messages.
+- Keep concise replies as the default.
+
+## Sprint 2.8: Roleplay Communication Protocol
+
+Status: planned.
+
+Focus:
+- Define a shared format for speech, actions, thoughts, scene notes, and out-of-character notes.
+- Teach the prompt contract how to interpret user roleplay notation.
+- Let characters use the same notation consistently.
+- Preserve scene and presence-mode constraints during roleplay.
+
 ## Backlog: Web Tools / Internet Access
 
 Status: deferred.
@@ -101,3 +152,11 @@ Focus:
 - Web search and browsing tools.
 - Tool orchestration for restaurants, movies, events, and live information.
 - Character must not pretend to verify live information unless a web tool was actually used.
+
+## Backlog: Voice Emotion Controls
+
+Status: deferred.
+
+Focus:
+- Adjust future voice response tone and volume based on character emotional state.
+- Requires a real or richer voice provider before implementation.

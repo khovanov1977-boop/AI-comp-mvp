@@ -440,6 +440,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("- likes tea", prompt.system)
         self.assertIn("Never confuse character_name and user_name", prompt.system)
         self.assertIn("do not invent a name", prompt.system)
+        self.assertIn("User knowledge guardrails:", prompt.system)
+        self.assertIn("Treat a fact about the user as known only", prompt.system)
+        self.assertIn("Never imply that the user previously mentioned", prompt.system)
+        self.assertIn("Never transfer details from the character's persona", prompt.system)
+        self.assertIn("Use user_name sparingly", prompt.system)
+        self.assertIn("back-to-back routine replies", prompt.system)
         self.assertIn("obey the correction", prompt.system)
         self.assertIn("Never describe the character in third person", prompt.system)
         self.assertIn("Do not mechanically repeat", prompt.system)
@@ -459,6 +465,18 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Understand slang, smileys, typos", prompt.system)
         self.assertIn("Do not lecture the user about slang or spelling", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
+
+    def test_prompt_builder_respects_blank_character_specific_user_name(self) -> None:
+        self.character.profile.user_nickname = ""
+        self.character.user.display_name = "Global Profile Name"
+        self.db.commit()
+
+        context = build_orchestrator_context(self.db, self.character, "hello")
+        prompt = build_provider_prompt(context)
+
+        self.assertIn("user_name: the user", prompt.system)
+        self.assertIn("do not invent a name for the user", prompt.system)
+        self.assertIn("do not address the user by user_display_name", prompt.system)
 
     def test_response_sanitizer_removes_tool_call_artifacts(self) -> None:
         reply = "Я уже рядом, слышишь? wait <tool_call>\nenter</tool_call>\nИ говорю с тобой."

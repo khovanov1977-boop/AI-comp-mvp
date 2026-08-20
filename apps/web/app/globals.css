@@ -108,6 +108,14 @@ select {
   margin: 0;
 }
 
+.form-section .privacy-hint {
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+  line-height: 1.4;
+  margin-top: 6px;
+  padding-left: 10px;
+}
+
 .label {
   color: var(--muted);
   font-size: 13px;
@@ -292,6 +300,62 @@ select {
 
 .stat-label strong {
   color: var(--ink);
+}
+
+.label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+}
+
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: help;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.info-hint:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.info-tooltip {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 7px);
+  left: 0;
+  width: 230px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  opacity: 0;
+  padding: 9px 10px;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  visibility: hidden;
+}
+
+.info-hint:hover .info-tooltip,
+.info-hint:focus .info-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 .stat-track {
