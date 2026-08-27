@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.character import Character, CharacterProfile, CharacterScene, CharacterState
 from app.models.user import User
-from app.schemas.character import CharacterCreate, CharacterRead
+from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdate
 from app.services.scene_service import DEFAULT_SCENE
 from app.services.time_context import infer_timezone
 
@@ -46,6 +46,12 @@ def to_character_read(character: Character) -> CharacterRead:
         user_country=user.country if user else "",
         user_timezone=user.timezone if user else "Europe/Moscow",
         user_language=user.language if user else "ru",
+        warmth=profile.warmth if profile else 50,
+        initiative=profile.initiative if profile else 50,
+        playfulness=profile.playfulness if profile else 50,
+        directness=profile.directness if profile else 50,
+        emotionality=profile.emotionality if profile else 50,
+        rationality=profile.rationality if profile else 50,
         created_at=character.created_at,
     )
 
@@ -75,6 +81,12 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         dislikes=payload.dislikes,
         language=payload.language,
         user_nickname=payload.user_nickname,
+        warmth=payload.warmth,
+        initiative=payload.initiative,
+        playfulness=payload.playfulness,
+        directness=payload.directness,
+        emotionality=payload.emotionality,
+        rationality=payload.rationality,
     )
     character.state = CharacterState()
     character.scene = CharacterScene(**DEFAULT_SCENE)
@@ -95,4 +107,38 @@ def get_character(character_id: str, db: Session = Depends(get_db)) -> Character
     character = db.get(Character, character_id)
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
+    return to_character_read(character)
+
+
+@router.patch("/{character_id}", response_model=CharacterRead)
+def update_character(
+    character_id: str,
+    payload: CharacterUpdate,
+    db: Session = Depends(get_db),
+) -> CharacterRead:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    if payload.relationship_mode is not None:
+        character.relationship_mode = payload.relationship_mode
+
+    profile = character.profile
+    if not profile:
+        profile = CharacterProfile()
+        character.profile = profile
+
+    if payload.personality_description is not None:
+        profile.personality_description = payload.personality_description
+    if payload.communication_style is not None:
+        profile.communication_style = payload.communication_style
+
+    for trait_name in ("warmth", "initiative", "playfulness", "directness", "emotionality", "rationality"):
+        trait_value = getattr(payload, trait_name)
+        if trait_value is not None:
+            setattr(profile, trait_name, trait_value)
+
+    db.add(character)
+    db.commit()
+    db.refresh(character)
     return to_character_read(character)

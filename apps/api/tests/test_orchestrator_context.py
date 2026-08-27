@@ -3,8 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -25,7 +24,13 @@ from app.services.memory_service import remember_user_message
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
 from app.services.response_sanitizer import sanitize_assistant_reply
-from app.services.scene_service import get_or_create_scene
+from app.services.scene_service import get_or_create_scene, update_scene
+from app.schemas.scene import SceneUpdate
+from app.schema_sync import (
+    ensure_dev_schema,
+    legacy_local_timestamp_to_utc,
+    normalize_legacy_finished_scene_memory,
+)
 from app.services.time_context import describe_daylight_context, describe_time_of_day, infer_timezone
 
 
@@ -70,6 +75,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
             dislikes="Noise",
             language="ru",
             user_nickname="Tester",
+            warmth=82,
+            initiative=68,
+            playfulness=37,
+            directness=61,
+            emotionality=74,
+            rationality=56,
         )
         character.state = CharacterState(
             mood="curious",
@@ -83,7 +94,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         return character
 
     def add_context_records(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
         self.db.add_all(
             [
                 Memory(character_id=self.character.id, memory_type="user_fact", content="favorite city Ukhta", importance=2),
@@ -125,6 +136,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.profile.dislikes, "Noise")
         self.assertEqual(context.profile.language, "ru")
         self.assertEqual(context.profile.user_nickname, "Tester")
+        self.assertEqual(context.profile.warmth, 82)
+        self.assertEqual(context.profile.initiative, 68)
+        self.assertEqual(context.profile.playfulness, 37)
+        self.assertEqual(context.profile.directness, 61)
+        self.assertEqual(context.profile.emotionality, 74)
+        self.assertEqual(context.profile.rationality, 56)
         self.assertEqual(context.state.mood, "curious")
         self.assertEqual(context.state.trust, 21)
         self.assertEqual(context.state.attachment, 13)
@@ -142,6 +159,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertTrue(context.user_context.daylight_context)
         self.assertEqual(context.scene_context.presence_mode, "remote_chat")
         self.assertEqual(context.scene_context.location_name, "Private chat")
+        self.assertIsNone(context.scene_context.context_started_at)
         self.assertFalse(context.scene_context.can_use_physical_touch)
         self.assertFalse(context.scene_context.can_share_immediate_physical_space)
         self.assertIn("Remote chat", context.world_state.reality_summary)
@@ -275,7 +293,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(state.mood, "warm")
         self.assertEqual(state.trust_level, 100)
         self.assertEqual(state.attachment_level, 100)
-        self.assertEqual(state.energy_level, 0)
+        self.assertGreaterEqual(state.energy_level, 0)
+        self.assertLessEqual(state.energy_level, 3)
 
     def test_state_engine_detects_conflict_and_smileys(self) -> None:
         conflict = analyze_user_message("Ты перепутал мое имя, не называй меня так")
@@ -285,6 +304,27 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertLess(conflict.trust_delta, 0)
         self.assertEqual(smile.mood, "warm")
         self.assertGreater(smile.trust_delta, 0)
+
+    def test_state_engine_uses_stronger_balanced_deltas(self) -> None:
+        conflict = analyze_user_message("Ты ошибся и не понял меня")
+        negative = analyze_user_message("Мне грустно и одиноко")
+        affection = analyze_user_message("Я скучаю и обнимаю тебя")
+        positive = analyze_user_message("Спасибо, это класс :) ")
+        question = analyze_user_message("Как ты? Что думаешь?")
+
+        self.assertLessEqual(conflict.trust_delta, -2)
+        self.assertLessEqual(conflict.attachment_delta, -1)
+        self.assertLessEqual(conflict.energy_delta, -2)
+        self.assertGreaterEqual(negative.attachment_delta, 1)
+        self.assertLessEqual(negative.energy_delta, -2)
+        self.assertGreaterEqual(affection.trust_delta, 1)
+        self.assertGreaterEqual(affection.attachment_delta, 3)
+        self.assertGreaterEqual(affection.energy_delta, 0)
+        self.assertGreaterEqual(positive.trust_delta, 2)
+        self.assertGreaterEqual(positive.attachment_delta, 1)
+        self.assertGreaterEqual(positive.energy_delta, 1)
+        self.assertGreaterEqual(question.trust_delta, 1)
+        self.assertGreaterEqual(question.energy_delta, 0)
 
     def test_language_robustness_detects_slang_smileys_and_typos(self) -> None:
         signal = analyze_language_robustness("Сорян, щас норм вайб :)")
@@ -322,6 +362,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["character_name"], "Alice")
         self.assertEqual(payload["relationship_mode"], "friend")
         self.assertEqual(payload["profile"]["personality_description"], "Warm and thoughtful")
+        self.assertEqual(payload["profile"]["warmth"], 82)
+        self.assertEqual(payload["profile"]["initiative"], 68)
         self.assertEqual(payload["state"]["mood"], "curious")
         self.assertEqual(payload["user_context"]["city"], "Moscow")
         self.assertEqual(payload["user_context"]["timezone"], "Europe/Moscow")
@@ -378,6 +420,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "gender": "male",
                     "relationship_mode": "friend",
                     "language": "ru",
+                    "warmth": 85,
+                    "initiative": 70,
+                    "playfulness": 35,
+                    "directness": 60,
+                    "emotionality": 75,
+                    "rationality": 55,
                 },
             )
         finally:
@@ -388,6 +436,56 @@ class OrchestratorContextTestCase(unittest.TestCase):
         scene = self.db.scalar(select(CharacterScene).where(CharacterScene.character_id == character_id))
         self.assertIsNotNone(scene)
         self.assertEqual(scene.presence_mode, "remote_chat")
+        profile = self.db.scalar(select(CharacterProfile).where(CharacterProfile.character_id == character_id))
+        self.assertIsNotNone(profile)
+        self.assertEqual(response.json()["warmth"], 85)
+        self.assertEqual(profile.initiative, 70)
+        self.assertEqual(profile.playfulness, 35)
+
+    def test_character_settings_can_be_updated_for_existing_character(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            response = client.patch(
+                f"/characters/{self.character.id}",
+                json={
+                    "relationship_mode": "colleague",
+                    "personality_description": "Calm but curious",
+                    "communication_style": "Direct and practical",
+                    "warmth": 40,
+                    "initiative": 80,
+                    "playfulness": 20,
+                    "directness": 90,
+                    "emotionality": 30,
+                    "rationality": 85,
+                },
+            )
+            invalid_response = client.patch(f"/characters/{self.character.id}", json={"warmth": 101})
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["relationship_mode"], "colleague")
+        self.assertEqual(payload["personality_description"], "Calm but curious")
+        self.assertEqual(payload["communication_style"], "Direct and practical")
+        self.assertEqual(payload["warmth"], 40)
+        self.assertEqual(payload["initiative"], 80)
+        self.assertEqual(payload["rationality"], 85)
+        self.assertEqual(invalid_response.status_code, 422)
+
+        self.db.expire_all()
+        updated_character = self.db.get(Character, self.character.id)
+        self.assertEqual(updated_character.relationship_mode, "colleague")
+        self.assertEqual(updated_character.profile.directness, 90)
+        self.assertEqual(updated_character.profile.emotionality, 30)
 
     def test_mock_provider_can_be_called_through_provider_interface(self) -> None:
         self.add_context_records()
@@ -417,6 +515,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("current_user_daylight_context:", prompt.system)
         self.assertIn("presence_mode: remote_chat", prompt.system)
         self.assertIn("location_name: Private chat", prompt.system)
+        self.assertIn("scene_time_description: not specified", prompt.system)
+        self.assertIn("scene_context_started_at:", prompt.system)
+        self.assertIn("This Scene context is the active episode", prompt.system)
         self.assertIn("Current reality / world state", prompt.system)
         self.assertIn("reality_summary: Remote chat", prompt.system)
         self.assertIn("physical_touch_policy:", prompt.system)
@@ -428,6 +529,18 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("personality_description: Warm and thoughtful", prompt.system)
         self.assertIn("communication_style: Gentle, concise", prompt.system)
         self.assertIn("boundaries: No medical advice", prompt.system)
+        self.assertIn("Personality equalizer (continuous values from 0 to 100):", prompt.system)
+        self.assertIn("warmth: 82", prompt.system)
+        self.assertIn("initiative: 68", prompt.system)
+        self.assertIn("playfulness: 37", prompt.system)
+        self.assertIn("directness: 61", prompt.system)
+        self.assertIn("emotionality: 74", prompt.system)
+        self.assertIn("rationality: 56", prompt.system)
+        self.assertIn("Apply all traits together as continuous tendencies", prompt.system)
+        self.assertIn("the equalizer value controls behavior", prompt.system)
+        self.assertIn("shape word choice, initiative, humor", prompt.system)
+        self.assertIn("Never announce or recite personality trait names", prompt.system)
+        self.assertIn("Express warmth and initiative according to the configured personality traits", prompt.system)
         self.assertIn("mood: curious", prompt.system)
         self.assertIn("mood_human_ru:", prompt.system)
         self.assertIn("живой интерес", prompt.system)
@@ -458,12 +571,25 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Do not suggest sunset", prompt.system)
         self.assertIn("do not suggest immediate in-person activities together", prompt.system)
         self.assertIn("Treat world_state as the current reality", prompt.system)
+        self.assertIn("finished shared scene describe past experience only", prompt.system)
+        self.assertIn("Old-scene words such as today, tomorrow", prompt.system)
+        self.assertIn("the user is currently present at user_position", prompt.system)
+        self.assertIn("scene_time_description is specified", prompt.system)
         self.assertIn("Do not invent a different place", prompt.system)
         self.assertIn("If the user asks where you are", prompt.system)
         self.assertIn("Never output tool calls", prompt.system)
         self.assertIn("<tool_call>", prompt.system)
+        self.assertIn("Response length contract (high priority)", prompt.system)
+        self.assertIn("reply in 1-3 concise sentences", prompt.system)
+        self.assertIn("stay under about 120 words", prompt.system)
+        self.assertIn("one complete installment of about 120-150 words", prompt.system)
+        self.assertIn("'подлиннее' never mean writing up to the technical limit", prompt.system)
+        self.assertIn("continue across conversational turns", prompt.system)
+        self.assertIn("Personality, high emotionality, and dramatic atmosphere", prompt.system)
+        self.assertIn("do not write up to the 500-token ceiling", prompt.system)
         self.assertIn("Understand slang, smileys, typos", prompt.system)
         self.assertIn("Do not lecture the user about slang or spelling", prompt.system)
+        self.assertIn("Recent messages belong to the current scene context only", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
 
     def test_prompt_builder_respects_blank_character_specific_user_name(self) -> None:
@@ -515,9 +641,204 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(first_scene.id, second_scene.id)
         self.assertEqual(first_scene.character_id, self.character.id)
 
+    def test_scene_update_keeps_context_while_new_scene_archives_and_cuts_it_off(self) -> None:
+        scene = get_or_create_scene(self.db, self.character)
+        scene.presence_mode = "same_place"
+        scene.location_name = "Cinema"
+        scene.location_description = "The user and character are watching The Matrix together."
+        now = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=5)
+        self.db.add_all(
+            [
+                Message(
+                    character_id=self.character.id,
+                    role="user",
+                    content="Давай посмотрим Матрицу",
+                    created_at=now,
+                ),
+                Message(
+                    character_id=self.character.id,
+                    role="assistant",
+                    content="С удовольствием, беру попкорн",
+                    created_at=now + timedelta(seconds=1),
+                ),
+            ]
+        )
+        self.db.commit()
+
+        update_scene(
+            self.db,
+            self.character,
+            SceneUpdate(
+                character_id=self.character.id,
+                presence_mode="same_place",
+                location_name="Cinema hall",
+                location_description="The film is still playing.",
+                user_position="in a cinema seat",
+                character_position="in the next seat",
+            ),
+        )
+        continued_context = build_orchestrator_context(self.db, self.character, "продолжаем")
+        self.assertEqual([message.content for message in continued_context.recent_messages], [
+            "Давай посмотрим Матрицу",
+            "С удовольствием, беру попкорн",
+        ])
+
+        new_scene = update_scene(
+            self.db,
+            self.character,
+            SceneUpdate(
+                character_id=self.character.id,
+                presence_mode="same_place",
+                location_name="Home sofa",
+                location_description="Three days later, the user and character are relaxing at home.",
+                time_description="three days later, in the evening",
+                user_position="sitting on the sofa",
+                character_position="sitting nearby",
+                start_new_scene=True,
+                previous_scene_summary="We went to the cinema together and watched The Matrix.",
+            ),
+        )
+
+        self.assertIsNotNone(new_scene.context_started_at)
+        self.assertEqual(new_scene.context_timestamp_basis, "utc")
+        utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.assertLess(abs(utc_now - new_scene.context_started_at), timedelta(seconds=5))
+        new_context = build_orchestrator_context(self.db, self.character, "Как тебе тот фильм?")
+        self.assertEqual(new_context.recent_messages, [])
+        self.assertEqual(new_context.scene_context.time_description, "three days later, in the evening")
+        scene_memories = new_context.memory["life_event"]
+        self.assertEqual(len(scene_memories), 1)
+        self.assertIn("Finished shared scene: Cinema hall", scene_memories[0].content)
+        self.assertIn("watched The Matrix", scene_memories[0].content)
+        self.assertIn("not the current physical scene", scene_memories[0].content)
+
+        current_scene_message = Message(
+            character_id=self.character.id,
+            role="user",
+            content="Мы уже дома на диване",
+            created_at=new_scene.context_started_at + timedelta(seconds=1),
+        )
+        self.db.add(current_scene_message)
+        self.db.commit()
+        continued_new_context = build_orchestrator_context(self.db, self.character, "Помнишь кино?")
+        self.assertEqual(
+            [message.content for message in continued_new_context.recent_messages],
+            ["Мы уже дома на диване"],
+        )
+
+    def test_new_scene_memory_falls_back_to_scene_and_recent_messages(self) -> None:
+        scene = get_or_create_scene(self.db, self.character)
+        scene.location_name = "Movie night"
+        scene.location_description = "The user and character are choosing a film together."
+        self.db.add_all(
+            [
+                Message(character_id=self.character.id, role="user", content="Включаем Матрицу"),
+                Message(
+                    character_id=self.character.id,
+                    role="assistant",
+                    content="Завтра снова придёшь за папкой",
+                ),
+            ]
+        )
+        self.db.commit()
+
+        update_scene(
+            self.db,
+            self.character,
+            SceneUpdate(
+                character_id=self.character.id,
+                presence_mode="same_place",
+                location_name="Home",
+                location_description="The next scene begins at home.",
+                start_new_scene=True,
+            ),
+        )
+
+        memory = self.db.scalar(
+            select(Memory).where(Memory.character_id == self.character.id, Memory.memory_type == "life_event")
+        )
+        self.assertIsNotNone(memory)
+        self.assertIn("Finished shared scene: Movie night", memory.content)
+        self.assertIn("choosing a film together", memory.content)
+        self.assertIn("user: Включаем Матрицу", memory.content)
+        self.assertNotIn("Завтра снова придёшь за папкой", memory.content)
+        self.assertIn("relative dates, plans, and unfinished actions must never be treated as current", memory.content)
+
     def test_timezone_can_be_inferred_from_city(self) -> None:
         self.assertEqual(infer_timezone("Ухта", "Россия"), "Europe/Moscow")
         self.assertEqual(infer_timezone("Novosibirsk", "Russia"), "Asia/Novosibirsk")
+
+    def test_schema_sync_adds_personality_traits_to_existing_profile_table(self) -> None:
+        legacy_engine = create_engine("sqlite://", poolclass=StaticPool)
+        legacy_local_scene_start = datetime.now().replace(microsecond=0)
+        with legacy_engine.begin() as connection:
+            connection.execute(text("CREATE TABLE character_profiles (id VARCHAR PRIMARY KEY)"))
+            connection.execute(text("CREATE TABLE users (id VARCHAR PRIMARY KEY)"))
+            connection.execute(
+                text(
+                    "CREATE TABLE character_scenes ("
+                    "id VARCHAR PRIMARY KEY, character_id VARCHAR UNIQUE NOT NULL, "
+                    "presence_mode VARCHAR NOT NULL DEFAULT 'remote_chat', "
+                    "location_name VARCHAR NOT NULL DEFAULT 'Private chat', "
+                    "location_description TEXT NOT NULL DEFAULT '', "
+                    "user_position VARCHAR NOT NULL DEFAULT 'at their own place', "
+                    "character_position VARCHAR NOT NULL DEFAULT 'at their own place', "
+                    "context_started_at TIMESTAMP NULL, "
+                    "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO character_scenes "
+                    "(id, character_id, context_started_at) "
+                    "VALUES ('legacy-scene', 'legacy-character', :context_started_at)"
+                ),
+                {"context_started_at": legacy_local_scene_start},
+            )
+
+        ensure_dev_schema(legacy_engine)
+
+        profile_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_profiles")}
+        self.assertTrue(
+            {"warmth", "initiative", "playfulness", "directness", "emotionality", "rationality"}.issubset(
+                profile_columns
+            )
+        )
+        scene_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_scenes")}
+        self.assertIn("context_started_at", scene_columns)
+        self.assertIn("context_timestamp_basis", scene_columns)
+        self.assertIn("time_description", scene_columns)
+        with legacy_engine.connect() as connection:
+            migrated_scene = connection.execute(
+                text(
+                    "SELECT context_started_at, context_timestamp_basis "
+                    "FROM character_scenes WHERE id = 'legacy-scene'"
+                )
+            ).mappings().one()
+        migrated_context_start = migrated_scene["context_started_at"]
+        if isinstance(migrated_context_start, str):
+            migrated_context_start = datetime.fromisoformat(migrated_context_start)
+        self.assertEqual(
+            migrated_context_start,
+            legacy_local_timestamp_to_utc(legacy_local_scene_start),
+        )
+        self.assertEqual(migrated_scene["context_timestamp_basis"], "utc")
+        legacy_engine.dispose()
+
+    def test_legacy_finished_scene_memory_drops_assistant_plans(self) -> None:
+        legacy_memory = (
+            "Finished shared scene: Office. Scene-ending exchange: "
+            "user: Я уже ушёл | assistant: Завтра, когда придёте, будет чай | "
+            "user: Папку положите в сейф. This is shared past experience, not the current physical scene."
+        )
+
+        normalized = normalize_legacy_finished_scene_memory(legacy_memory)
+
+        self.assertIn("user: Я уже ушёл", normalized)
+        self.assertIn("user: Папку положите в сейф", normalized)
+        self.assertNotIn("Завтра, когда придёте", normalized)
+        self.assertIn("relative dates, plans, and unfinished actions", normalized)
+        self.assertEqual(normalize_legacy_finished_scene_memory(normalized), normalized)
 
     def test_time_of_day_context_guides_realistic_suggestions(self) -> None:
         self.assertEqual(describe_time_of_day(23), "late_evening")

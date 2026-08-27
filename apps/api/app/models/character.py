@@ -39,6 +39,12 @@ class CharacterProfile(Base):
     language: Mapped[str] = mapped_column(String, default="ru")
     user_nickname: Mapped[str] = mapped_column(String, default="")
     voice_id: Mapped[str] = mapped_column(String, default="mock-voice")
+    warmth: Mapped[int] = mapped_column(Integer, default=50)
+    initiative: Mapped[int] = mapped_column(Integer, default=50)
+    playfulness: Mapped[int] = mapped_column(Integer, default=50)
+    directness: Mapped[int] = mapped_column(Integer, default=50)
+    emotionality: Mapped[int] = mapped_column(Integer, default=50)
+    rationality: Mapped[int] = mapped_column(Integer, default=50)
 
     character = relationship("Character", back_populates="profile")
 
@@ -65,8 +71,11 @@ class CharacterScene(Base):
     presence_mode: Mapped[str] = mapped_column(String, default="remote_chat")
     location_name: Mapped[str] = mapped_column(String, default="Private chat")
     location_description: Mapped[str] = mapped_column(Text, default="")
+    time_description: Mapped[str] = mapped_column(Text, default="")
     user_position: Mapped[str] = mapped_column(String, default="at their own place")
     character_position: Mapped[str] = mapped_column(String, default="at their own place")
+    context_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    context_timestamp_basis: Mapped[str] = mapped_column(String, default="utc")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     character = relationship("Character", back_populates="scene")

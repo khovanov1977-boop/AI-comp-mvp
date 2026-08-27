@@ -43,7 +43,26 @@ export type CharacterCreateInput = {
   user_country: string;
   user_timezone: string;
   user_language: string;
+  warmth: number;
+  initiative: number;
+  playfulness: number;
+  directness: number;
+  emotionality: number;
+  rationality: number;
 };
+
+export type CharacterUpdateInput = Pick<
+  CharacterCreateInput,
+  | "relationship_mode"
+  | "personality_description"
+  | "communication_style"
+  | "warmth"
+  | "initiative"
+  | "playfulness"
+  | "directness"
+  | "emotionality"
+  | "rationality"
+>;
 
 export function listCharacters() {
   return request<Character[]>("/characters");
@@ -58,6 +77,13 @@ export function createCharacter(input: CharacterCreateInput) {
 
 export function getCharacter(characterId: string) {
   return request<Character>(`/characters/${characterId}`);
+}
+
+export function updateCharacter(characterId: string, input: CharacterUpdateInput) {
+  return request<Character>(`/characters/${characterId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getChatHistory(characterId: string) {
@@ -114,7 +140,21 @@ export function updateMemory(
   });
 }
 
-export function updateScene(input: CompanionContext["scene_context"]) {
+export type SceneUpdateInput = Pick<
+  CompanionContext["scene_context"],
+  | "character_id"
+  | "presence_mode"
+  | "location_name"
+  | "location_description"
+  | "time_description"
+  | "user_position"
+  | "character_position"
+> & {
+  start_new_scene?: boolean;
+  previous_scene_summary?: string;
+};
+
+export function updateScene(input: SceneUpdateInput) {
   return request<CompanionContext["scene_context"]>("/scenes", {
     method: "PUT",
     body: JSON.stringify(input),

@@ -48,14 +48,15 @@ def build_orchestrator_context(
     local_datetime = get_local_datetime(user_timezone)
     scene = get_or_create_scene(db, character)
 
-    recent_messages = list(
-        db.scalars(
-            select(Message)
-            .where(Message.character_id == character.id)
-            .order_by(Message.created_at.desc())
-            .limit(recent_message_limit)
-        )
+    recent_message_query = (
+        select(Message)
+        .where(Message.character_id == character.id)
+        .order_by(Message.created_at.desc())
+        .limit(recent_message_limit)
     )
+    if scene.context_started_at is not None:
+        recent_message_query = recent_message_query.where(Message.created_at >= scene.context_started_at)
+    recent_messages = list(db.scalars(recent_message_query))
     recent_messages.reverse()
 
     memories_by_category: dict[str, list[OrchestratorMemoryItem]] = {}
@@ -82,8 +83,10 @@ def build_orchestrator_context(
         presence_mode=scene.presence_mode,
         location_name=scene.location_name,
         location_description=scene.location_description,
+        time_description=scene.time_description,
         user_position=scene.user_position,
         character_position=scene.character_position,
+        context_started_at=scene.context_started_at,
         can_use_physical_touch=scene.presence_mode in {"same_place", "virtual_roleplay"},
         can_share_immediate_physical_space=scene.presence_mode in {"same_place", "virtual_roleplay"},
     )
@@ -104,6 +107,12 @@ def build_orchestrator_context(
             dislikes=profile.dislikes if profile else "",
             language=profile.language if profile else "ru",
             user_nickname=profile.user_nickname if profile else "",
+            warmth=profile.warmth if profile else 50,
+            initiative=profile.initiative if profile else 50,
+            playfulness=profile.playfulness if profile else 50,
+            directness=profile.directness if profile else 50,
+            emotionality=profile.emotionality if profile else 50,
+            rationality=profile.rationality if profile else 50,
         ),
         state=OrchestratorStateContext(
             mood=state.mood,

@@ -30,10 +30,14 @@ def infer_posture_summary(user_position: str, character_position: str) -> str:
 def build_world_state(scene: OrchestratorSceneContext) -> dict[str, object]:
     location_type = infer_location_type(scene.location_name, scene.location_description)
     posture_summary = infer_posture_summary(scene.user_position, scene.character_position)
+    scene_time = f" Scene time: {scene.time_description}." if scene.time_description.strip() else ""
 
     if scene.presence_mode == "remote_chat":
         return {
-            "reality_summary": "Remote chat. The user and character are not in the same physical space.",
+            "reality_summary": (
+                "Remote chat. The user and character are not in the same physical space."
+                f"{scene_time}"
+            ),
             "location_type": "remote_chat",
             "posture_summary": "separate_places",
             "physical_touch_policy": "impossible in real space; only imagined or roleplayed touch is possible when clearly framed as imagined",
@@ -44,7 +48,9 @@ def build_world_state(scene: OrchestratorSceneContext) -> dict[str, object]:
 
     if scene.presence_mode == "virtual_roleplay":
         return {
-            "reality_summary": f"Imagined shared scene: {scene.location_name}. {scene.location_description}",
+            "reality_summary": (
+                f"Imagined shared scene: {scene.location_name}. {scene.location_description}{scene_time}"
+            ),
             "location_type": location_type,
             "posture_summary": posture_summary,
             "physical_touch_policy": "possible inside the imagined scene if it fits the established situation",
@@ -54,7 +60,9 @@ def build_world_state(scene: OrchestratorSceneContext) -> dict[str, object]:
         }
 
     return {
-        "reality_summary": f"Same physical scene: {scene.location_name}. {scene.location_description}",
+        "reality_summary": (
+            f"Same physical scene: {scene.location_name}. {scene.location_description}{scene_time}"
+        ),
         "location_type": location_type,
         "posture_summary": posture_summary,
         "physical_touch_policy": "possible if it fits the positions, distance, relationship, and user consent",

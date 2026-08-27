@@ -61,8 +61,10 @@ class SceneContextRead(BaseModel):
     presence_mode: str
     location_name: str
     location_description: str
+    time_description: str
     user_position: str
     character_position: str
+    context_started_at: datetime | None
 
 
 class MemoryMetaRead(BaseModel):

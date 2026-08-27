@@ -3,13 +3,14 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { createCharacter, type CharacterCreateInput } from "../lib/api";
+import { PersonalityEqualizer } from "./PersonalityEqualizer";
 
 const initialForm: CharacterCreateInput = {
   name: "",
   gender: "unspecified",
   relationship_mode: "companion",
   personality_description: "",
-  communication_style: "warm and thoughtful",
+  communication_style: "natural and conversational",
   background_story: "",
   biography: "",
   boundaries: "",
@@ -21,6 +22,12 @@ const initialForm: CharacterCreateInput = {
   user_country: "",
   user_timezone: "",
   user_language: "ru",
+  warmth: 50,
+  initiative: 50,
+  playfulness: 50,
+  directness: 50,
+  emotionality: 50,
+  rationality: 50,
 };
 
 export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
@@ -89,6 +96,11 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           onChange={(event) => update("personality_description", event.target.value)}
         />
       </label>
+      <div className="form-section">
+        <h3>Personality equalizer</h3>
+        <p className="muted">Six continuous traits shape behavior. A value of 50 is balanced.</p>
+      </div>
+      <PersonalityEqualizer values={form} onChange={(key, value) => update(key, value)} />
       <label className="field">
         <span className="label">Communication style</span>
         <input

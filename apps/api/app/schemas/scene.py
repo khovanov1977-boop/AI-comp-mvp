@@ -13,8 +13,10 @@ class SceneRead(BaseModel):
     presence_mode: str
     location_name: str
     location_description: str
+    time_description: str
     user_position: str
     character_position: str
+    context_started_at: datetime | None
     updated_at: datetime
 
 
@@ -23,5 +25,8 @@ class SceneUpdate(BaseModel):
     presence_mode: str = "remote_chat"
     location_name: str = "Private chat"
     location_description: str = ""
+    time_description: str = ""
     user_position: str = "at their own place"
     character_position: str = "at their own place"
+    start_new_scene: bool = False
+    previous_scene_summary: str = ""

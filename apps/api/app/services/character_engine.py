@@ -97,31 +97,33 @@ def analyze_user_message(message: str) -> StateSignal:
 
     trust_delta = bounded_jitter(message, "trust")
     attachment_delta = bounded_jitter(message, "attachment")
-    energy_delta = -1 + bounded_jitter(message, "energy")
+    energy_delta = bounded_jitter(message, "energy")
     mood = "attentive"
 
     if conflict:
         mood = "guarded"
-        trust_delta -= 2
-        attachment_delta -= 1
-        energy_delta -= 1
+        trust_delta -= 3
+        attachment_delta -= 2
+        energy_delta -= 3
     elif negative:
         mood = "concerned"
         trust_delta += 0
-        attachment_delta += 1
-        energy_delta -= 2
+        attachment_delta += 2
+        energy_delta -= 3
     elif affection:
         mood = "warm"
-        trust_delta += 1
-        attachment_delta += 3
-        energy_delta -= 1
+        trust_delta += 2
+        attachment_delta += 4
+        energy_delta += 1
     elif positive:
         mood = "warm"
-        trust_delta += 2
-        attachment_delta += 1
+        trust_delta += 3
+        attachment_delta += 2
+        energy_delta += 2
     elif question:
         mood = "curious"
-        trust_delta += 1
+        trust_delta += 2
+        energy_delta += 1
 
     return StateSignal(
         mood=mood,

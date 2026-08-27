@@ -137,6 +137,54 @@ select {
   resize: vertical;
 }
 
+.trait-equalizer {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trait-equalizer.compact {
+  grid-template-columns: 1fr;
+}
+
+.trait-control {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  gap: 7px;
+  padding: 11px 12px;
+}
+
+.trait-heading,
+.trait-endpoints {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trait-heading {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.trait-heading > span {
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.trait-control small,
+.trait-endpoints {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.trait-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .button {
   border: 0;
   border-radius: 8px;
@@ -253,6 +301,45 @@ select {
   color: var(--muted);
   margin: 0;
   padding: 10px 12px;
+}
+
+.character-settings {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.character-settings summary {
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.character-settings-form {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.character-settings-form > p {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.settings-subheading {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-subheading strong {
+  font-size: 13px;
+}
+
+.settings-subheading small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .composer {
@@ -413,6 +500,37 @@ select {
   min-height: 72px;
 }
 
+.scene-memory-field {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.scene-memory-field small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.scene-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.secondary-button {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .memory-groups {
   display: grid;
   gap: 14px;
@@ -506,7 +624,8 @@ select {
 
 @media (max-width: 820px) {
   .grid,
-  .chat-layout {
+  .chat-layout,
+  .trait-equalizer {
     grid-template-columns: 1fr;
   }
 

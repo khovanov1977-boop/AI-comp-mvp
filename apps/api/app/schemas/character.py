@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CharacterCreate(BaseModel):
@@ -20,6 +20,12 @@ class CharacterCreate(BaseModel):
     user_country: str = ""
     user_timezone: str = "Europe/Moscow"
     user_language: str = "ru"
+    warmth: int = Field(default=50, ge=0, le=100)
+    initiative: int = Field(default=50, ge=0, le=100)
+    playfulness: int = Field(default=50, ge=0, le=100)
+    directness: int = Field(default=50, ge=0, le=100)
+    emotionality: int = Field(default=50, ge=0, le=100)
+    rationality: int = Field(default=50, ge=0, le=100)
 
 
 class CharacterRead(BaseModel):
@@ -42,4 +48,22 @@ class CharacterRead(BaseModel):
     user_country: str
     user_timezone: str
     user_language: str
+    warmth: int
+    initiative: int
+    playfulness: int
+    directness: int
+    emotionality: int
+    rationality: int
     created_at: datetime
+
+
+class CharacterUpdate(BaseModel):
+    relationship_mode: str | None = None
+    personality_description: str | None = None
+    communication_style: str | None = None
+    warmth: int | None = Field(default=None, ge=0, le=100)
+    initiative: int | None = Field(default=None, ge=0, le=100)
+    playfulness: int | None = Field(default=None, ge=0, le=100)
+    directness: int | None = Field(default=None, ge=0, le=100)
+    emotionality: int | None = Field(default=None, ge=0, le=100)
+    rationality: int | None = Field(default=None, ge=0, le=100)

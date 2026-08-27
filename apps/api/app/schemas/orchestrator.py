@@ -15,6 +15,12 @@ class OrchestratorProfileContext(BaseModel):
     dislikes: str
     language: str
     user_nickname: str
+    warmth: int
+    initiative: int
+    playfulness: int
+    directness: int
+    emotionality: int
+    rationality: int
 
 
 class OrchestratorStateContext(BaseModel):
@@ -43,8 +49,10 @@ class OrchestratorSceneContext(BaseModel):
     presence_mode: str
     location_name: str
     location_description: str
+    time_description: str
     user_position: str
     character_position: str
+    context_started_at: datetime | None
     can_use_physical_touch: bool
     can_share_immediate_physical_space: bool
 

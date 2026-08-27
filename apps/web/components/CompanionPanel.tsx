@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Character, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
-import { createMemory, deleteMemory, updateMemory, updateScene } from "../lib/api";
+import { createMemory, deleteMemory, updateCharacter, updateMemory, updateScene } from "../lib/api";
+import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
   { value: "user_fact", label: "User facts" },
@@ -19,6 +20,36 @@ const PRESENCE_MODES: Array<{ value: CompanionContext["scene_context"]["presence
   { value: "same_place", label: "Same place" },
   { value: "virtual_roleplay", label: "Virtual roleplay" },
 ];
+
+const RELATIONSHIP_MODES = [
+  { value: "companion", label: "Companion" },
+  { value: "friend", label: "Friend" },
+  { value: "colleague", label: "Colleague" },
+  { value: "relative", label: "Relative" },
+  { value: "romantic", label: "Romantic" },
+];
+
+type CharacterSettingsDraft = Pick<
+  Character,
+  | "relationship_mode"
+  | "personality_description"
+  | "communication_style"
+  | PersonalityTraitKey
+>;
+
+function getCharacterSettingsDraft(character: Character): CharacterSettingsDraft {
+  return {
+    relationship_mode: character.relationship_mode,
+    personality_description: character.personality_description,
+    communication_style: character.communication_style,
+    warmth: character.warmth,
+    initiative: character.initiative,
+    playfulness: character.playfulness,
+    directness: character.directness,
+    emotionality: character.emotionality,
+    rationality: character.rationality,
+  };
+}
 
 const MOOD_LABELS: Record<string, { label: string; description: string }> = {
   attentive: {
@@ -89,11 +120,13 @@ export function CompanionPanel({
   character,
   context,
   contextError,
+  onCharacterChange,
   onMemoryChange,
 }: {
   character: Character;
   context: CompanionContext | null;
   contextError: string;
+  onCharacterChange: (character: Character) => void;
   onMemoryChange: () => void;
 }) {
   const state = context?.character_state;
@@ -113,10 +146,38 @@ export function CompanionPanel({
   const [sceneDraft, setSceneDraft] = useState<CompanionContext["scene_context"] | null>(null);
   const [isSavingScene, setIsSavingScene] = useState(false);
   const [sceneError, setSceneError] = useState("");
+  const [previousSceneSummary, setPreviousSceneSummary] = useState("");
+  const [characterDraft, setCharacterDraft] = useState<CharacterSettingsDraft>(() =>
+    getCharacterSettingsDraft(character),
+  );
+  const [isSavingCharacter, setIsSavingCharacter] = useState(false);
+  const [characterError, setCharacterError] = useState("");
 
   useEffect(() => {
     setSceneDraft(sceneContext ?? null);
   }, [sceneContext]);
+
+  useEffect(() => {
+    setCharacterDraft(getCharacterSettingsDraft(character));
+  }, [character]);
+
+  function updateCharacterDraft<K extends keyof CharacterSettingsDraft>(key: K, value: CharacterSettingsDraft[K]) {
+    setCharacterDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submitCharacterSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSavingCharacter(true);
+    setCharacterError("");
+    try {
+      const updatedCharacter = await updateCharacter(character.id, characterDraft);
+      onCharacterChange(updatedCharacter);
+    } catch {
+      setCharacterError("Could not update character settings.");
+    } finally {
+      setIsSavingCharacter(false);
+    }
+  }
 
   async function removeMemory(memoryId: string) {
     setMemoryError("");
@@ -203,21 +264,48 @@ export function CompanionPanel({
     setSceneDraft((current) => (current ? { ...current, [key]: value } : current));
   }
 
-  async function submitScene(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveScene(startNewScene: boolean) {
     if (!sceneDraft) {
       return;
     }
     setIsSavingScene(true);
     setSceneError("");
     try {
-      await updateScene(sceneDraft);
+      await updateScene({
+        character_id: sceneDraft.character_id,
+        presence_mode: sceneDraft.presence_mode,
+        location_name: sceneDraft.location_name,
+        location_description: sceneDraft.location_description,
+        time_description: sceneDraft.time_description,
+        user_position: sceneDraft.user_position,
+        character_position: sceneDraft.character_position,
+        start_new_scene: startNewScene,
+        previous_scene_summary: startNewScene ? previousSceneSummary : "",
+      });
+      if (startNewScene) {
+        setPreviousSceneSummary("");
+      }
       onMemoryChange();
     } catch {
       setSceneError("Could not update scene.");
     } finally {
       setIsSavingScene(false);
     }
+  }
+
+  async function submitScene(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveScene(false);
+  }
+
+  async function startNewScene() {
+    const confirmed = window.confirm(
+      "Start a new scene? Previous messages will stay visible, but they will no longer be used as active scene context.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    await saveScene(true);
   }
 
   return (
@@ -233,6 +321,63 @@ export function CompanionPanel({
         {character.likes ? <p className="muted">Likes: {character.likes}</p> : null}
         {character.dislikes ? <p className="muted">Dislikes: {character.dislikes}</p> : null}
       </section>
+
+      <details className="character-settings">
+        <summary>Character settings</summary>
+        <form className="character-settings-form" onSubmit={submitCharacterSettings}>
+          <p className="muted">
+            These are base personality settings. Mood, trust, closeness, and energy continue to evolve during chat.
+          </p>
+          <label className="field">
+            <span className="label">Relationship mode</span>
+            <select
+              className="select"
+              value={characterDraft.relationship_mode}
+              disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("relationship_mode", event.target.value)}
+            >
+              {characterDraft.relationship_mode === "mentor" ? <option value="mentor">Mentor (legacy)</option> : null}
+              {RELATIONSHIP_MODES.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="label">Personality description</span>
+            <textarea
+              className="textarea"
+              value={characterDraft.personality_description}
+              disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("personality_description", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="label">Communication style</span>
+            <input
+              className="input"
+              value={characterDraft.communication_style}
+              disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("communication_style", event.target.value)}
+            />
+          </label>
+          <div className="settings-subheading">
+            <strong>Personality equalizer</strong>
+            <small>50 is balanced.</small>
+          </div>
+          <PersonalityEqualizer
+            values={characterDraft}
+            disabled={isSavingCharacter}
+            compact
+            onChange={(key, value) => updateCharacterDraft(key, value)}
+          />
+          {characterError ? <p className="muted">{characterError}</p> : null}
+          <button className="button" type="submit" disabled={isSavingCharacter}>
+            {isSavingCharacter ? "Saving..." : "Save character settings"}
+          </button>
+        </form>
+      </details>
 
       <section className="stack">
         <h2 className="panel-title">Эмоциональное состояние</h2>
@@ -339,6 +484,17 @@ export function CompanionPanel({
               />
             </label>
             <label className="field">
+              <span className="label">Scene time</span>
+              <input
+                className="input"
+                value={sceneDraft.time_description}
+                disabled={isSavingScene}
+                placeholder="Example: the next morning, three days later, Friday at 9:00"
+                onChange={(event) => updateSceneDraft("time_description", event.target.value)}
+              />
+              <small>Optional. Keeps the story time stable even when it differs from the real clock.</small>
+            </label>
+            <label className="field">
               <span className="label">Your position</span>
               <input
                 className="input"
@@ -356,10 +512,28 @@ export function CompanionPanel({
                 onChange={(event) => updateSceneDraft("character_position", event.target.value)}
               />
             </label>
+            <label className="field scene-memory-field">
+              <span className="label">What should be remembered from the current scene?</span>
+              <textarea
+                className="textarea"
+                value={previousSceneSummary}
+                disabled={isSavingScene}
+                placeholder="Example: We went to the cinema together and watched The Matrix."
+                onChange={(event) => setPreviousSceneSummary(event.target.value)}
+              />
+              <small>
+                Used only by Start new scene. If left blank, the previous scene description and its latest user messages are saved.
+              </small>
+            </label>
             {sceneError ? <p className="muted">{sceneError}</p> : null}
-            <button className="button" type="submit" disabled={isSavingScene}>
-              {isSavingScene ? "Saving..." : "Save scene"}
-            </button>
+            <div className="scene-actions">
+              <button className="button" type="submit" disabled={isSavingScene}>
+                {isSavingScene ? "Saving..." : "Update current scene"}
+              </button>
+              <button className="secondary-button" type="button" disabled={isSavingScene} onClick={startNewScene}>
+                Start new scene
+              </button>
+            </div>
           </form>
         ) : (
           <p className="muted">Loading scene...</p>

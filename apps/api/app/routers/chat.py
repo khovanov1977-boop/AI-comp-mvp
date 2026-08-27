@@ -70,8 +70,10 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
             presence_mode=scene.presence_mode,
             location_name=scene.location_name,
             location_description=scene.location_description,
+            time_description=scene.time_description,
             user_position=scene.user_position,
             character_position=scene.character_position,
+            context_started_at=scene.context_started_at,
         ),
         memory_meta=MemoryMetaRead(
             total_count=total_count,

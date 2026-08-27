@@ -7,13 +7,14 @@ import { ChatWindow } from "./ChatWindow";
 import { CompanionPanel } from "./CompanionPanel";
 
 export function ChatWorkspace({ character }: { character: Character }) {
+  const [currentCharacter, setCurrentCharacter] = useState(character);
   const [context, setContext] = useState<CompanionContext | null>(null);
   const [contextError, setContextError] = useState("");
 
   async function refreshContext() {
     setContextError("");
     try {
-      setContext(await getCompanionContext(character.id));
+      setContext(await getCompanionContext(currentCharacter.id));
     } catch (error) {
       setContext(null);
       setContextError(error instanceof Error ? error.message : "Could not load companion context.");
@@ -21,16 +22,21 @@ export function ChatWorkspace({ character }: { character: Character }) {
   }
 
   useEffect(() => {
+    setCurrentCharacter(character);
+  }, [character]);
+
+  useEffect(() => {
     refreshContext();
-  }, [character.id]);
+  }, [currentCharacter.id]);
 
   return (
     <div className="chat-layout">
-      <ChatWindow characterId={character.id} onAfterSend={() => refreshContext().catch(() => setContext(null))} />
+      <ChatWindow characterId={currentCharacter.id} onAfterSend={() => refreshContext().catch(() => setContext(null))} />
       <CompanionPanel
-        character={character}
+        character={currentCharacter}
         context={context}
         contextError={contextError}
+        onCharacterChange={setCurrentCharacter}
         onMemoryChange={() => refreshContext()}
       />
     </div>

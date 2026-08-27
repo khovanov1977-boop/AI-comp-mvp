@@ -16,6 +16,12 @@ export type Character = {
   user_country: string;
   user_timezone: string;
   user_language: string;
+  warmth: number;
+  initiative: number;
+  playfulness: number;
+  directness: number;
+  emotionality: number;
+  rationality: number;
   created_at: string;
 };
 
@@ -58,8 +64,10 @@ export type CompanionContext = {
     presence_mode: "remote_chat" | "same_place" | "virtual_roleplay";
     location_name: string;
     location_description: string;
+    time_description: string;
     user_position: string;
     character_position: string;
+    context_started_at: string | null;
   };
   memory_meta: {
     total_count: number;

@@ -106,13 +106,19 @@ Focus:
 
 ## Sprint 2.5: Character Personality Equalizer
 
-Status: planned.
+Status: implemented locally.
 
 Focus:
 - Add a compact set of adjustable character traits.
 - Keep the trait set expressive but not exhausting for the user.
 - Include trait values in orchestrator context and prompt builder.
 - Make character behavior follow configured personality traits.
+- Let existing characters edit personality and relationship settings.
+- Support `Update current scene` and `Start new scene` with explicit context boundaries.
+- Preserve a finished shared scene as editable long-term memory before starting the next scene.
+- Keep scene boundaries on the same UTC clock as messages and repair legacy local-clock boundaries for all characters.
+- Keep narrative scene time explicit and prevent finished-scene plans from overriding the active scene.
+- Normalize legacy finished-scene memories so old assistant-generated plans are not reused as facts.
 
 ## Sprint 2.6: User Profile v2 + Name Forms
 
