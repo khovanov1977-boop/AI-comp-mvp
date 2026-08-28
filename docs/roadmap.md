@@ -106,7 +106,7 @@ Focus:
 
 ## Sprint 2.5: Character Personality Equalizer
 
-Status: implemented locally.
+Status: completed and pushed.
 
 Focus:
 - Add a compact set of adjustable character traits.
@@ -122,13 +122,15 @@ Focus:
 
 ## Sprint 2.6: User Profile v2 + Name Forms
 
-Status: planned.
+Status: implemented locally.
 
 Focus:
 - Add optional user profile fields such as age.
 - Support formal, preferred, casual, and vocative name forms.
 - Improve Russian address patterns such as `Алексей`, `Леша`, `Леха`, `Леш`.
 - Keep private information optional and user-controlled.
+- Select ordinary and direct-address name forms deterministically from the relationship role.
+- Never derive or invent missing name forms.
 
 ## Sprint 2.7: Response Length + Style Control
 

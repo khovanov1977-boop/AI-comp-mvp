@@ -63,8 +63,6 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
     user.country = payload.user_country.strip()
     user.timezone = infer_timezone(user.city, user.country, payload.user_timezone.strip() or "Europe/Moscow")
     user.language = payload.user_language.strip() or payload.language
-    if payload.user_nickname.strip():
-        user.display_name = payload.user_nickname.strip()
     character = Character(
         user_id=user.id,
         name=payload.name,
@@ -132,7 +130,6 @@ def update_character(
         profile.personality_description = payload.personality_description
     if payload.communication_style is not None:
         profile.communication_style = payload.communication_style
-
     for trait_name in ("warmth", "initiative", "playfulness", "directness", "emotionality", "rationality"):
         trait_value = getattr(payload, trait_name)
         if trait_value is not None:

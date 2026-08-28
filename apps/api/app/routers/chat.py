@@ -60,6 +60,11 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
         ),
         user_context=UserContextRead(
             display_name=character.user.display_name if character.user else "",
+            formal_name=character.user.formal_name if character.user else "",
+            preferred_name=character.user.preferred_name if character.user else "",
+            casual_name=character.user.casual_name if character.user else "",
+            vocative_name=character.user.vocative_name if character.user else "",
+            age=character.user.age if character.user else None,
             city=character.user.city if character.user else "",
             country=character.user.country if character.user else "",
             timezone=character.user.timezone if character.user else "Europe/Moscow",

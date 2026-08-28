@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Character, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
-import { createMemory, deleteMemory, updateCharacter, updateMemory, updateScene } from "../lib/api";
+import { createMemory, deleteMemory, updateCharacter, updateMemory, updateScene, updateUserProfile } from "../lib/api";
 import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
@@ -152,6 +152,9 @@ export function CompanionPanel({
   );
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [characterError, setCharacterError] = useState("");
+  const [userDraft, setUserDraft] = useState<CompanionContext["user_context"] | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+  const [userError, setUserError] = useState("");
 
   useEffect(() => {
     setSceneDraft(sceneContext ?? null);
@@ -160,6 +163,10 @@ export function CompanionPanel({
   useEffect(() => {
     setCharacterDraft(getCharacterSettingsDraft(character));
   }, [character]);
+
+  useEffect(() => {
+    setUserDraft(userContext ?? null);
+  }, [userContext]);
 
   function updateCharacterDraft<K extends keyof CharacterSettingsDraft>(key: K, value: CharacterSettingsDraft[K]) {
     setCharacterDraft((current) => ({ ...current, [key]: value }));
@@ -176,6 +183,31 @@ export function CompanionPanel({
       setCharacterError("Could not update character settings.");
     } finally {
       setIsSavingCharacter(false);
+    }
+  }
+
+  function updateUserDraft<K extends keyof CompanionContext["user_context"]>(
+    key: K,
+    value: CompanionContext["user_context"][K],
+  ) {
+    setUserDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  async function submitUserProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!userDraft) {
+      return;
+    }
+    setIsSavingUser(true);
+    setUserError("");
+    try {
+      const updatedUser = await updateUserProfile({ character_id: character.id, ...userDraft });
+      setUserDraft(updatedUser);
+      onMemoryChange();
+    } catch {
+      setUserError("Could not update user profile.");
+    } finally {
+      setIsSavingUser(false);
     }
   }
 
@@ -421,7 +453,11 @@ export function CompanionPanel({
           <div className="context-list">
             <div>
               <span>Name</span>
-              <strong>{userContext.display_name || character.user_nickname || "Not set"}</strong>
+              <strong>{userContext.preferred_name || userContext.display_name || "Not set"}</strong>
+            </div>
+            <div>
+              <span>Age</span>
+              <strong>{userContext.age ?? "Not set"}</strong>
             </div>
             <div>
               <span>Location</span>
@@ -440,6 +476,118 @@ export function CompanionPanel({
           <p className="muted">Loading user context...</p>
         )}
       </section>
+
+      <details className="character-settings">
+        <summary>User profile</summary>
+        {userDraft ? (
+          <form className="character-settings-form" onSubmit={submitUserProfile}>
+            <p className="privacy-hint">
+              All fields are optional and shared across your characters. Leave anything blank if you do not want it
+              used in conversation.
+            </p>
+            <label className="field">
+              <span className="label">Display name</span>
+              <input
+                className="input"
+                value={userDraft.display_name}
+                disabled={isSavingUser}
+                onChange={(event) => updateUserDraft("display_name", event.target.value)}
+              />
+              <small>Used in the interface. It is not automatically used as direct address.</small>
+            </label>
+            <label className="field">
+              <span className="label">Formal name</span>
+              <input
+                className="input"
+                value={userDraft.formal_name}
+                disabled={isSavingUser}
+                placeholder="Example: Алексей"
+                onChange={(event) => updateUserDraft("formal_name", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Preferred name</span>
+              <input
+                className="input"
+                value={userDraft.preferred_name}
+                disabled={isSavingUser}
+                placeholder="Example: Лёша"
+                onChange={(event) => updateUserDraft("preferred_name", event.target.value)}
+              />
+              <small>The default name when a character-specific override is not set.</small>
+            </label>
+            <label className="field">
+              <span className="label">Direct-address form</span>
+              <input
+                className="input"
+                value={userDraft.vocative_name}
+                disabled={isSavingUser}
+                placeholder="Example: Лёш"
+                onChange={(event) => updateUserDraft("vocative_name", event.target.value)}
+              />
+              <small>Used exactly as written when the character addresses you directly.</small>
+            </label>
+            <label className="field">
+              <span className="label">Age</span>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                max="120"
+                value={userDraft.age ?? ""}
+                disabled={isSavingUser}
+                onChange={(event) => updateUserDraft("age", event.target.value ? Number(event.target.value) : null)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">City</span>
+              <input
+                className="input"
+                value={userDraft.city}
+                disabled={isSavingUser}
+                onChange={(event) => updateUserDraft("city", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Country</span>
+              <input
+                className="input"
+                value={userDraft.country}
+                disabled={isSavingUser}
+                onChange={(event) => updateUserDraft("country", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Timezone</span>
+              <input
+                className="input"
+                value={userDraft.timezone}
+                disabled={isSavingUser}
+                placeholder="Europe/Moscow"
+                onChange={(event) => updateUserDraft("timezone", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Language</span>
+              <select
+                className="select"
+                value={userDraft.language}
+                disabled={isSavingUser}
+                onChange={(event) => updateUserDraft("language", event.target.value)}
+              >
+                <option value="ru">Russian</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            {userError ? <p className="muted">{userError}</p> : null}
+            <button className="button" type="submit" disabled={isSavingUser}>
+              {isSavingUser ? "Saving..." : "Save user profile"}
+            </button>
+          </form>
+        ) : (
+          <p className="muted">Loading user profile...</p>
+        )}
+      </details>
 
       <section className="stack">
         <h2 className="panel-title">Scene</h2>

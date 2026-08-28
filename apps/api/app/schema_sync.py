@@ -19,6 +19,11 @@ PROFILE_COLUMNS = {
 }
 
 USER_COLUMNS = {
+    "formal_name": "VARCHAR NOT NULL DEFAULT ''",
+    "preferred_name": "VARCHAR NOT NULL DEFAULT ''",
+    "casual_name": "VARCHAR NOT NULL DEFAULT ''",
+    "vocative_name": "VARCHAR NOT NULL DEFAULT ''",
+    "age": "INTEGER NULL",
     "city": "VARCHAR NOT NULL DEFAULT ''",
     "country": "VARCHAR NOT NULL DEFAULT ''",
     "timezone": "VARCHAR NOT NULL DEFAULT 'Europe/Moscow'",

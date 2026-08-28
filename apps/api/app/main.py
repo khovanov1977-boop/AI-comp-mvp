@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.models import *  # noqa: F403
-from app.routers import characters, chat, debug, health, limits, media, memories, scenes, voice
+from app.routers import characters, chat, debug, health, limits, media, memories, scenes, users, voice
 from app.schema_sync import ensure_dev_schema
 
 app = FastAPI(title="AI Companion API", version="0.0.1")
@@ -57,5 +57,6 @@ app.include_router(debug.router)
 app.include_router(media.router)
 app.include_router(memories.router)
 app.include_router(scenes.router)
+app.include_router(users.router)
 app.include_router(voice.router)
 app.include_router(limits.router)

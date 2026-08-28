@@ -23,9 +23,6 @@ MOOD_HUMAN_RU = {
     "guarded": "осторожность: персонаж не закрыт полностью, но держит дистанцию и выбирает слова аккуратнее",
 }
 
-UNKNOWN_USER_NAMES = {"", "demo user", "not set", "none", "unknown", "the user"}
-
-
 def get_mood_human_ru(mood: str) -> str:
     return MOOD_HUMAN_RU.get(mood, "ровное присутствие: персонаж держит спокойный, живой контакт")
 
@@ -37,8 +34,11 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     scene_context = context.scene_context
     world_state = context.world_state
     language_context = context.language_context
-    user_name_candidate = profile.user_nickname.strip()
-    user_name = "the user" if user_name_candidate.lower() in UNKNOWN_USER_NAMES else user_name_candidate
+    user_name = (
+        user_context.default_name
+        if user_context.name_usage_allowed and user_context.default_name
+        else "the user"
+    )
     memory_lines = []
     for category, memories in context.memory.items():
         if not memories:
@@ -81,6 +81,12 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- guidance: {language_context.guidance}",
         "User context:",
         f"- user_display_name: {user_context.display_name}",
+        f"- user_default_name: {user_context.default_name if user_context.name_usage_allowed else 'suppressed this turn'}",
+        f"- user_direct_address_name: {user_context.direct_address_name if user_context.name_usage_allowed else 'suppressed this turn'}",
+        f"- user_address_policy: {user_context.address_policy}",
+        f"- user_name_usage_allowed_this_turn: {user_context.name_usage_allowed}",
+        f"- user_name_usage_reason: {user_context.name_usage_reason}",
+        f"- user_age: {user_context.age if user_context.age is not None else 'not specified'}",
         f"- user_city: {user_context.city}",
         f"- user_country: {user_context.country}",
         f"- user_timezone: {user_context.timezone}",
@@ -151,9 +157,16 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Speak only as the character, in first person. Never describe the character in third person.",
         "- Never call the user by the character's name. Never confuse character_name and user_name.",
         "- If user_name is 'the user', do not invent a name for the user.",
-        "- Treat user_name as the only allowed direct name address. If it is 'the user', do not address the user by user_display_name either.",
-        "- Use user_name sparingly: mainly for a greeting, rare emotional emphasis, or necessary clarification. Ordinary replies usually need no direct name address.",
-        "- Do not repeat user_name multiple times in one reply or use it in back-to-back routine replies.",
+        "- Use names sparingly. When a selected name is unavailable this turn, do not address the user by user_display_name or any legacy profile name.",
+        "- The normal and preferred behavior is to reply without using the user's name. People do not address each other by name in every conversational turn.",
+        "- If user_name_usage_allowed_this_turn is False, do not use any user name or name variant anywhere in the reply, even if one appears in recent messages.",
+        "- If user_name_usage_allowed_this_turn is True, a name is merely available, never required. Most replies should still omit it.",
+        "- The orchestrator has already selected names from the relationship role. Do not override user_address_policy or choose another stored name form.",
+        "- Only when a rare name use is natural, use user_default_name outside direct address or user_direct_address_name in direct address. Never derive or decline either form yourself.",
+        "- Do not start a reply with the user's name by default. Relationship closeness, romance, excitement, or roleplay intensity do not justify repeating it more often.",
+        "- If the selected name is suppressed or not specified, do not recover it from user_display_name, profile, memory, or recent messages.",
+        "- Do not use a name multiple times in one reply or in back-to-back routine replies.",
+        "- Treat user_age as known only when it is explicitly set. Never estimate age from dates, writing style, relationships, or memory fragments.",
         "- If the recent conversation corrects the user's name, pronouns, gender, or situation, obey the correction over profile or memory.",
         "- If you are unsure about the user's name or gender, avoid gendered wording or ask naturally.",
         "- Use the grammatical gender that matches character_gender, especially in Russian and other gendered languages.",

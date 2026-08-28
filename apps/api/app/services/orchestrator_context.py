@@ -17,6 +17,7 @@ from app.schemas.orchestrator import (
     OrchestratorWorldStateContext,
 )
 from app.services.language_robustness import analyze_language_robustness
+from app.services.name_addressing import build_user_address_policy, decide_name_usage
 from app.services.scene_service import get_or_create_scene
 from app.services.time_context import (
     DEFAULT_TIMEZONE,
@@ -47,6 +48,12 @@ def build_orchestrator_context(
     user_timezone = infer_timezone(user_city, user_country, user.timezone if user and user.timezone else DEFAULT_TIMEZONE)
     local_datetime = get_local_datetime(user_timezone)
     scene = get_or_create_scene(db, character)
+    address_policy = build_user_address_policy(
+        character.relationship_mode,
+        user.formal_name if user else "",
+        user.preferred_name if user else "",
+        user.vocative_name if user else "",
+    )
 
     recent_message_query = (
         select(Message)
@@ -58,6 +65,11 @@ def build_orchestrator_context(
         recent_message_query = recent_message_query.where(Message.created_at >= scene.context_started_at)
     recent_messages = list(db.scalars(recent_message_query))
     recent_messages.reverse()
+    name_usage = decide_name_usage(
+        current_user_message,
+        [(message.role, message.content) for message in recent_messages],
+        address_policy,
+    )
 
     memories_by_category: dict[str, list[OrchestratorMemoryItem]] = {}
     for category in MEMORY_CATEGORIES:
@@ -122,6 +134,16 @@ def build_orchestrator_context(
         ),
         user_context=OrchestratorUserContext(
             display_name=user.display_name if user else "",
+            formal_name=user.formal_name if user else "",
+            preferred_name=user.preferred_name if user else "",
+            casual_name=user.casual_name if user else "",
+            vocative_name=user.vocative_name if user else "",
+            age=user.age if user else None,
+            default_name=address_policy.default_name,
+            direct_address_name=address_policy.direct_address_name,
+            address_policy=address_policy.policy,
+            name_usage_allowed=name_usage.allowed,
+            name_usage_reason=name_usage.reason,
             city=user_city,
             country=user_country,
             timezone=user_timezone,

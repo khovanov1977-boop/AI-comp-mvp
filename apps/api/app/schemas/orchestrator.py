@@ -32,6 +32,16 @@ class OrchestratorStateContext(BaseModel):
 
 class OrchestratorUserContext(BaseModel):
     display_name: str
+    formal_name: str
+    preferred_name: str
+    casual_name: str
+    vocative_name: str
+    age: int | None
+    default_name: str
+    direct_address_name: str
+    address_policy: str
+    name_usage_allowed: bool
+    name_usage_reason: str
     city: str
     country: str
     timezone: str

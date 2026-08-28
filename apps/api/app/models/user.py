@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -13,6 +13,11 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String)
+    formal_name: Mapped[str] = mapped_column(String, default="")
+    preferred_name: Mapped[str] = mapped_column(String, default="")
+    casual_name: Mapped[str] = mapped_column(String, default="")
+    vocative_name: Mapped[str] = mapped_column(String, default="")
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     city: Mapped[str] = mapped_column(String, default="")
     country: Mapped[str] = mapped_column(String, default="")
     timezone: Mapped[str] = mapped_column(String, default="Europe/Moscow")

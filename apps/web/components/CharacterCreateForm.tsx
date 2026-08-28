@@ -17,7 +17,6 @@ const initialForm: CharacterCreateInput = {
   likes: "",
   dislikes: "",
   language: "ru",
-  user_nickname: "",
   user_city: "",
   user_country: "",
   user_timezone: "",
@@ -135,19 +134,6 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           <option value="ru">Russian</option>
           <option value="en">English</option>
         </select>
-      </label>
-      <div className="form-section">
-        <h3>How the character addresses you</h3>
-        <p className="muted">This is your name or nickname, not the character's name.</p>
-      </div>
-      <label className="field">
-        <span className="label">Your name or nickname for this character</span>
-        <input
-          className="input"
-          value={form.user_nickname}
-          placeholder="Leave blank if the character should not use a name"
-          onChange={(event) => update("user_nickname", event.target.value)}
-        />
       </label>
       <div className="form-section">
         <h3>About you</h3>

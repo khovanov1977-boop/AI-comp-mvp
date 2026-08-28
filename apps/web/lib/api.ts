@@ -1,4 +1,4 @@
-import type { Character, ChatMessage, CompanionContext, Memory } from "@ai-companion/shared";
+import type { Character, ChatMessage, CompanionContext, Memory, UserProfile } from "@ai-companion/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -38,7 +38,6 @@ export type CharacterCreateInput = {
   likes: string;
   dislikes: string;
   language: string;
-  user_nickname: string;
   user_city: string;
   user_country: string;
   user_timezone: string;
@@ -81,6 +80,15 @@ export function getCharacter(characterId: string) {
 
 export function updateCharacter(characterId: string, input: CharacterUpdateInput) {
   return request<Character>(`/characters/${characterId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export type UserProfileUpdateInput = UserProfile & { character_id: string };
+
+export function updateUserProfile(input: UserProfileUpdateInput) {
+  return request<UserProfile>("/users/profile", {
     method: "PATCH",
     body: JSON.stringify(input),
   });

@@ -54,6 +54,11 @@ export type CompanionContext = {
   character_state: CharacterState;
   user_context: {
     display_name: string;
+    formal_name: string;
+    preferred_name: string;
+    casual_name: string;
+    vocative_name: string;
+    age: number | null;
     city: string;
     country: string;
     timezone: string;
@@ -79,3 +84,5 @@ export type CompanionContext = {
   };
   memories: Memory[];
 };
+
+export type UserProfile = CompanionContext["user_context"];

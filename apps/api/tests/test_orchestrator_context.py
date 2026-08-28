@@ -21,6 +21,7 @@ from app.services.character_engine import analyze_user_message, update_state_aft
 from app.services.language_robustness import analyze_language_robustness
 from app.services.orchestrator import handle_chat_message
 from app.services.memory_service import remember_user_message
+from app.services.name_addressing import build_user_address_policy, contains_name, decide_name_usage
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
 from app.services.response_sanitizer import sanitize_assistant_reply
@@ -55,6 +56,11 @@ class OrchestratorContextTestCase(unittest.TestCase):
         user = User(
             email="test@example.com",
             display_name="Tester",
+            formal_name="Алексей",
+            preferred_name="Лёша",
+            casual_name="Лёха",
+            vocative_name="Лёш",
+            age=48,
             city="Moscow",
             country="Russia",
             timezone="Europe/Moscow",
@@ -147,6 +153,16 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.state.attachment, 13)
         self.assertEqual(context.state.energy, 74)
         self.assertEqual(context.user_context.display_name, "Tester")
+        self.assertEqual(context.user_context.formal_name, "Алексей")
+        self.assertEqual(context.user_context.preferred_name, "Лёша")
+        self.assertEqual(context.user_context.casual_name, "Лёха")
+        self.assertEqual(context.user_context.vocative_name, "Лёш")
+        self.assertEqual(context.user_context.age, 48)
+        self.assertEqual(context.user_context.default_name, "Лёша")
+        self.assertEqual(context.user_context.direct_address_name, "Лёш")
+        self.assertEqual(context.user_context.address_policy, "preferred_by_relationship")
+        self.assertTrue(context.user_context.name_usage_allowed)
+        self.assertEqual(context.user_context.name_usage_reason, "available_but_optional")
         self.assertEqual(context.user_context.city, "Moscow")
         self.assertEqual(context.user_context.country, "Russia")
         self.assertEqual(context.user_context.timezone, "Europe/Moscow")
@@ -367,6 +383,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["state"]["mood"], "curious")
         self.assertEqual(payload["user_context"]["city"], "Moscow")
         self.assertEqual(payload["user_context"]["timezone"], "Europe/Moscow")
+        self.assertEqual(payload["user_context"]["preferred_name"], "Лёша")
+        self.assertEqual(payload["user_context"]["vocative_name"], "Лёш")
+        self.assertEqual(payload["user_context"]["age"], 48)
         self.assertEqual(payload["scene_context"]["presence_mode"], "remote_chat")
         self.assertEqual(payload["scene_context"]["location_name"], "Private chat")
         self.assertEqual(payload["world_state"]["location_type"], "remote_chat")
@@ -401,6 +420,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["memory_meta"]["extraction_mode"], "rule_based")
         self.assertEqual(payload["memory_meta"]["counts_by_category"]["preference"], 1)
         self.assertIn("local rules", payload["memory_meta"]["note"])
+        self.assertEqual(payload["user_context"]["formal_name"], "Алексей")
+        self.assertEqual(payload["user_context"]["preferred_name"], "Лёша")
 
     def test_character_creation_creates_default_scene(self) -> None:
         def override_get_db():
@@ -487,6 +508,56 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(updated_character.profile.directness, 90)
         self.assertEqual(updated_character.profile.emotionality, 30)
 
+    def test_user_profile_can_be_updated_and_cleared(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            response = client.patch(
+                "/users/profile",
+                json={
+                    "character_id": self.character.id,
+                    "display_name": "Алексей",
+                    "formal_name": "Алексей Иванович",
+                    "preferred_name": "Лёша",
+                    "casual_name": "",
+                    "vocative_name": "Лёш",
+                    "age": 49,
+                    "city": "Ухта",
+                    "country": "Россия",
+                    "timezone": "",
+                    "language": "ru",
+                },
+            )
+            invalid_response = client.patch(
+                "/users/profile",
+                json={"character_id": self.character.id, "age": 121},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["formal_name"], "Алексей Иванович")
+        self.assertEqual(payload["preferred_name"], "Лёша")
+        self.assertEqual(payload["casual_name"], "")
+        self.assertEqual(payload["vocative_name"], "Лёш")
+        self.assertEqual(payload["age"], 49)
+        self.assertEqual(payload["city"], "Ухта")
+        self.assertEqual(payload["timezone"], "Europe/Moscow")
+        self.assertEqual(invalid_response.status_code, 422)
+
+        self.db.expire_all()
+        updated_user = self.db.get(User, self.character.user_id)
+        self.assertEqual(updated_user.formal_name, "Алексей Иванович")
+        self.assertEqual(updated_user.age, 49)
+
     def test_mock_provider_can_be_called_through_provider_interface(self) -> None:
         self.add_context_records()
         context = build_orchestrator_context(self.db, self.character, "How are you?")
@@ -504,11 +575,17 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
         self.assertIn("character_name: Alice", prompt.system)
         self.assertIn("character_gender: female", prompt.system)
-        self.assertIn("user_name: Tester", prompt.system)
+        self.assertIn("user_name: Лёша", prompt.system)
         self.assertIn("relationship_mode: friend", prompt.system)
         self.assertIn("user_city: Moscow", prompt.system)
         self.assertIn("user_country: Russia", prompt.system)
         self.assertIn("user_timezone: Europe/Moscow", prompt.system)
+        self.assertIn("user_default_name: Лёша", prompt.system)
+        self.assertIn("user_direct_address_name: Лёш", prompt.system)
+        self.assertIn("user_address_policy: preferred_by_relationship", prompt.system)
+        self.assertIn("user_name_usage_allowed_this_turn: True", prompt.system)
+        self.assertIn("user_name_usage_reason: available_but_optional", prompt.system)
+        self.assertIn("user_age: 48", prompt.system)
         self.assertIn("exact_current_user_local_date:", prompt.system)
         self.assertIn("current_user_weekday:", prompt.system)
         self.assertIn("current_user_time_of_day:", prompt.system)
@@ -557,8 +634,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Treat a fact about the user as known only", prompt.system)
         self.assertIn("Never imply that the user previously mentioned", prompt.system)
         self.assertIn("Never transfer details from the character's persona", prompt.system)
-        self.assertIn("Use user_name sparingly", prompt.system)
+        self.assertIn("Use names sparingly", prompt.system)
         self.assertIn("back-to-back routine replies", prompt.system)
+        self.assertIn("orchestrator has already selected names", prompt.system)
+        self.assertIn("normal and preferred behavior is to reply without using the user's name", prompt.system)
+        self.assertIn("a name is merely available, never required", prompt.system)
+        self.assertIn("do not justify repeating it more often", prompt.system)
+        self.assertIn("Treat user_age as known only when it is explicitly set", prompt.system)
         self.assertIn("obey the correction", prompt.system)
         self.assertIn("Never describe the character in third person", prompt.system)
         self.assertIn("Do not mechanically repeat", prompt.system)
@@ -592,9 +674,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Recent messages belong to the current scene context only", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
 
-    def test_prompt_builder_respects_blank_character_specific_user_name(self) -> None:
-        self.character.profile.user_nickname = ""
+    def test_prompt_builder_ignores_legacy_character_specific_user_name(self) -> None:
+        self.character.profile.user_nickname = "Legacy Alias"
         self.character.user.display_name = "Global Profile Name"
+        self.character.user.formal_name = ""
+        self.character.user.preferred_name = ""
+        self.character.user.casual_name = ""
+        self.character.user.vocative_name = ""
         self.db.commit()
 
         context = build_orchestrator_context(self.db, self.character, "hello")
@@ -603,6 +689,81 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("user_name: the user", prompt.system)
         self.assertIn("do not invent a name for the user", prompt.system)
         self.assertIn("do not address the user by user_display_name", prompt.system)
+
+    def test_prompt_builder_uses_explicit_preferred_name_without_inventing_forms(self) -> None:
+        self.character.profile.user_nickname = ""
+        self.character.user.formal_name = "Алексей"
+        self.character.user.preferred_name = "Лёша"
+        self.character.user.casual_name = ""
+        self.character.user.vocative_name = "Лёш"
+        self.db.commit()
+
+        context = build_orchestrator_context(self.db, self.character, "hello")
+        prompt = build_provider_prompt(context)
+
+        self.assertIn("user_name: Лёша", prompt.system)
+        self.assertIn("user_default_name: Лёша", prompt.system)
+        self.assertIn("user_direct_address_name: Лёш", prompt.system)
+
+    def test_name_address_policy_follows_relationship_role(self) -> None:
+        colleague = build_user_address_policy("colleague", "Алексей", "Лёша", "Лёш")
+        friend = build_user_address_policy("friend", "Алексей", "Лёша", "Лёш")
+        romantic = build_user_address_policy("romantic", "Алексей", "Лёша", "Лёш")
+        legacy_mentor = build_user_address_policy("mentor", "Алексей", "Лёша", "Лёш")
+
+        self.assertEqual(colleague.default_name, "Алексей")
+        self.assertEqual(colleague.direct_address_name, "Алексей")
+        self.assertEqual(colleague.policy, "formal_by_relationship")
+        self.assertEqual(friend.default_name, "Лёша")
+        self.assertEqual(friend.direct_address_name, "Лёш")
+        self.assertEqual(romantic.direct_address_name, "Лёш")
+        self.assertEqual(legacy_mentor.default_name, "Алексей")
+
+        no_vocative = build_user_address_policy("relative", "Алексей", "Лёша", "")
+        self.assertEqual(no_vocative.direct_address_name, "Лёша")
+
+    def test_name_usage_has_cooldown_but_allows_explicit_request(self) -> None:
+        policy = build_user_address_policy("friend", "Алексей", "Лёша", "Лёш")
+        recent_messages = [
+            ("user", "Привет"),
+            ("assistant", "Привет, Лёш. Рад тебя видеть."),
+            ("user", "Как дела?"),
+        ]
+
+        cooldown = decide_name_usage("Расскажи, как дела", recent_messages, policy)
+        explicit_request = decide_name_usage("Обратись ко мне по имени", recent_messages, policy)
+        available = decide_name_usage(
+            "Как дела?",
+            [("assistant", "Рад тебя видеть.")] * 5,
+            policy,
+        )
+
+        self.assertFalse(cooldown.allowed)
+        self.assertEqual(cooldown.reason, "recent_name_cooldown")
+        self.assertTrue(explicit_request.allowed)
+        self.assertEqual(explicit_request.reason, "explicit_user_request")
+        self.assertTrue(available.allowed)
+        self.assertEqual(available.reason, "available_but_optional")
+        self.assertTrue(contains_name("Привет, Леша.", "Лёша"))
+
+    def test_prompt_suppresses_name_after_recent_use(self) -> None:
+        self.db.add(
+            Message(
+                character_id=self.character.id,
+                role="assistant",
+                content="Привет, Лёш. Рад тебя видеть.",
+            )
+        )
+        self.db.commit()
+
+        context = build_orchestrator_context(self.db, self.character, "Как дела?")
+        prompt = build_provider_prompt(context)
+
+        self.assertFalse(context.user_context.name_usage_allowed)
+        self.assertEqual(context.user_context.name_usage_reason, "recent_name_cooldown")
+        self.assertIn("user_name: the user", prompt.system)
+        self.assertIn("user_default_name: suppressed this turn", prompt.system)
+        self.assertIn("user_name_usage_allowed_this_turn: False", prompt.system)
 
     def test_response_sanitizer_removes_tool_call_artifacts(self) -> None:
         reply = "Я уже рядом, слышишь? wait <tool_call>\nenter</tool_call>\nИ говорю с тобой."
@@ -803,6 +964,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
             {"warmth", "initiative", "playfulness", "directness", "emotionality", "rationality"}.issubset(
                 profile_columns
             )
+        )
+        user_columns = {column["name"] for column in inspect(legacy_engine).get_columns("users")}
+        self.assertTrue(
+            {"formal_name", "preferred_name", "casual_name", "vocative_name", "age"}.issubset(user_columns)
         )
         scene_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_scenes")}
         self.assertIn("context_started_at", scene_columns)

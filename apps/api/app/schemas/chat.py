@@ -50,6 +50,11 @@ class MemoryRead(BaseModel):
 
 class UserContextRead(BaseModel):
     display_name: str
+    formal_name: str
+    preferred_name: str
+    casual_name: str
+    vocative_name: str
+    age: int | None
     city: str
     country: str
     timezone: str
