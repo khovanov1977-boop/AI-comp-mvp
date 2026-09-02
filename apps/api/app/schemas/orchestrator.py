@@ -85,6 +85,15 @@ class OrchestratorLanguageContext(BaseModel):
     guidance: str
 
 
+class OrchestratorRoleplayContext(BaseModel):
+    action_segments: list[str]
+    thought_segments: list[str]
+    scene_notes: list[str]
+    ooc_notes: list[str]
+    has_roleplay_notation: bool
+    response_mode: str
+
+
 class OrchestratorMemoryItem(BaseModel):
     id: str
     content: str
@@ -110,6 +119,7 @@ class OrchestratorContext(BaseModel):
     scene_context: OrchestratorSceneContext
     world_state: OrchestratorWorldStateContext
     language_context: OrchestratorLanguageContext
+    roleplay_context: OrchestratorRoleplayContext
     memory: dict[str, list[OrchestratorMemoryItem]]
     recent_messages: list[OrchestratorMessageContext]
     current_user_message: str

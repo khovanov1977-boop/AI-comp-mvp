@@ -25,6 +25,7 @@ from app.services.name_addressing import build_user_address_policy, contains_nam
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
 from app.services.response_sanitizer import sanitize_assistant_reply
+from app.services.roleplay_protocol import analyze_roleplay_notation
 from app.services.scene_service import get_or_create_scene, update_scene
 from app.schemas.scene import SceneUpdate
 from app.schema_sync import (
@@ -186,6 +187,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(context.language_context.slang_terms, {})
         self.assertEqual(context.language_context.smileys, {})
         self.assertEqual(context.language_context.typo_hints, {})
+        self.assertFalse(context.roleplay_context.has_roleplay_notation)
+        self.assertEqual(context.roleplay_context.response_mode, "plain_chat")
+        self.assertEqual(context.roleplay_context.action_segments, [])
         self.assertEqual(set(context.memory.keys()), {"user_fact", "preference", "life_event", "relationship_note", "system_note"})
         self.assertEqual(context.memory["preference"][0].content, "likes tea")
         self.assertEqual([message.content for message in context.recent_messages], ["hello", "hi"])
@@ -351,6 +355,41 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(signal.smileys[":)"], "friendly warmth or a light smile")
         self.assertEqual(signal.typo_hints["щас"], "сейчас")
         self.assertIn("Do not correct", signal.guidance)
+        self.assertNotIn("((", analyze_language_robustness("((OOC: пауза))").smileys)
+        self.assertIn("((", analyze_language_robustness("Мне грустно ((").smileys)
+
+    def test_roleplay_protocol_detects_mixed_notation_and_ooc_only(self) -> None:
+        mixed = analyze_roleplay_notation(
+            "Привет. *сажусь рядом* ~надеюсь, он не заметил~ "
+            "[сцена: за окном начинается дождь] ((OOC: без смены локации))"
+        )
+        ooc_only = analyze_roleplay_notation("((OOC: давай остановим *сцену*))")
+        plain = analyze_roleplay_notation("Привет, как ты?")
+
+        self.assertTrue(mixed.has_roleplay_notation)
+        self.assertEqual(mixed.response_mode, "mirror_roleplay")
+        self.assertEqual(mixed.action_segments, ["сажусь рядом"])
+        self.assertEqual(mixed.thought_segments, ["надеюсь, он не заметил"])
+        self.assertEqual(mixed.scene_notes, ["за окном начинается дождь"])
+        self.assertEqual(mixed.ooc_notes, ["без смены локации"])
+        self.assertEqual(ooc_only.response_mode, "ooc_only")
+        self.assertEqual(ooc_only.ooc_notes, ["давай остановим *сцену*"])
+        self.assertEqual(ooc_only.action_segments, [])
+        self.assertFalse(plain.has_roleplay_notation)
+        self.assertEqual(plain.response_mode, "plain_chat")
+
+    def test_orchestrator_context_includes_detected_roleplay_segments(self) -> None:
+        context = build_orchestrator_context(
+            self.db,
+            self.character,
+            "*подхожу к окну* ~мне тревожно~ [scene: дождь усиливается]",
+        )
+
+        self.assertTrue(context.roleplay_context.has_roleplay_notation)
+        self.assertEqual(context.roleplay_context.response_mode, "mirror_roleplay")
+        self.assertEqual(context.roleplay_context.action_segments, ["подхожу к окну"])
+        self.assertEqual(context.roleplay_context.thought_segments, ["мне тревожно"])
+        self.assertEqual(context.roleplay_context.scene_notes, ["дождь усиливается"])
 
     def test_debug_endpoint_returns_structured_context(self) -> None:
         self.add_context_records()
@@ -383,6 +422,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["state"]["mood"], "curious")
         self.assertEqual(payload["user_context"]["city"], "Moscow")
         self.assertEqual(payload["user_context"]["timezone"], "Europe/Moscow")
+        self.assertEqual(payload["roleplay_context"]["response_mode"], "plain_chat")
         self.assertEqual(payload["user_context"]["preferred_name"], "Лёша")
         self.assertEqual(payload["user_context"]["vocative_name"], "Лёш")
         self.assertEqual(payload["user_context"]["age"], 48)
@@ -679,6 +719,14 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("do not write up to the 500-token ceiling", prompt.system)
         self.assertIn("Understand slang, smileys, typos", prompt.system)
         self.assertIn("Do not lecture the user about slang or spelling", prompt.system)
+        self.assertIn("Roleplay communication protocol:", prompt.system)
+        self.assertIn("detected_response_mode: plain_chat", prompt.system)
+        self.assertIn("Physical actions use *action*", prompt.system)
+        self.assertIn("private thoughts use ~thought~", prompt.system)
+        self.assertIn("Out-of-character notes use ((OOC: note))", prompt.system)
+        self.assertIn("Never write, decide, or invent the user's speech", prompt.system)
+        self.assertIn("It never changes presence_mode", prompt.system)
+        self.assertIn("reply only as ((OOC: ...))", prompt.system)
         self.assertIn("Recent messages belong to the current scene context only", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
 

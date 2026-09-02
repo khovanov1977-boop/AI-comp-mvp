@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 
@@ -56,6 +57,8 @@ COMMON_TYPO_HINTS = (
     ("пж", "пожалуйста"),
 )
 
+OOC_NOTE_PATTERN = re.compile(r"\(\(.+?\)\)", re.DOTALL)
+
 
 @dataclass(frozen=True)
 class LanguageSignal:
@@ -78,7 +81,8 @@ def _find_typos(text: str) -> dict[str, str]:
 
 def analyze_language_robustness(message: str) -> LanguageSignal:
     slang_terms = _find_terms(message, SLANG_DICTIONARY)
-    smileys = _find_terms(message, SMILEY_MEANINGS)
+    message_without_ooc = OOC_NOTE_PATTERN.sub("", message)
+    smileys = _find_terms(message_without_ooc, SMILEY_MEANINGS)
     typo_hints = _find_typos(message)
     has_colloquial_language = bool(slang_terms or smileys or typo_hints)
 

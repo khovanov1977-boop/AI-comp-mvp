@@ -34,6 +34,7 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
     scene_context = context.scene_context
     world_state = context.world_state
     language_context = context.language_context
+    roleplay_context = context.roleplay_context
     user_name = (
         user_context.default_name
         if user_context.name_usage_allowed and user_context.default_name
@@ -84,6 +85,20 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         f"- detected_typo_hints: {language_context.typo_hints or 'none'}",
         f"- has_colloquial_language: {language_context.has_colloquial_language}",
         f"- guidance: {language_context.guidance}",
+        "Roleplay communication protocol:",
+        f"- detected_response_mode: {roleplay_context.response_mode}",
+        f"- detected_user_actions: {roleplay_context.action_segments or 'none'}",
+        f"- detected_user_thoughts: {roleplay_context.thought_segments or 'none'}",
+        f"- detected_scene_notes: {roleplay_context.scene_notes or 'none'}",
+        f"- detected_ooc_notes: {roleplay_context.ooc_notes or 'none'}",
+        "- Spoken dialogue is plain unwrapped text. Physical actions use *action*. The character's private thoughts use ~thought~. Scene notes use [scene: note]. Out-of-character notes use ((OOC: note)).",
+        "- Do not force roleplay notation into ordinary plain chat. When the user uses roleplay notation, mirror the same format consistently and keep speech distinct from actions and thoughts.",
+        "- Describe only the character's own speech, actions, sensations, and thoughts. Never write, decide, or invent the user's speech, consent, actions, feelings, or thoughts.",
+        "- A user's explicit *action* establishes only what the user chose to do. React to it without expanding it into additional user behavior.",
+        "- A scene note adds narrative detail only when it is compatible with Current reality / world state. It never changes presence_mode, location, time, or positions by itself; world_state and Scene context remain authoritative.",
+        "- In remote_chat, physical roleplay must stay clearly imagined or virtual. In same_place and virtual_roleplay, every action must still match the established place and positions.",
+        "- Never claim access to the user's private thoughts. Text inside ~thought~ is known only because the user explicitly wrote it in the roleplay message.",
+        "- If detected_response_mode is ooc_only, reply only as ((OOC: ...)) and do not advance the scene. If OOC and in-character content are mixed, keep the OOC answer separately marked and continue only the in-character part requested.",
         "User context:",
         f"- user_display_name: {user_context.display_name}",
         f"- user_default_name: {user_context.default_name if user_context.name_usage_allowed else 'suppressed this turn'}",

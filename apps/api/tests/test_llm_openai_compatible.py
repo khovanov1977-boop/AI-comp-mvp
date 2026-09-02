@@ -18,6 +18,7 @@ from app.schemas.orchestrator import (
     OrchestratorMemoryItem,
     OrchestratorMessageContext,
     OrchestratorProfileContext,
+    OrchestratorRoleplayContext,
     OrchestratorSceneContext,
     OrchestratorStateContext,
     OrchestratorUserContext,
@@ -99,6 +100,14 @@ def make_context() -> OrchestratorContext:
             typo_hints={},
             has_colloquial_language=False,
             guidance="Interpret colloquial phrasing generously.",
+        ),
+        roleplay_context=OrchestratorRoleplayContext(
+            action_segments=[],
+            thought_segments=[],
+            scene_notes=[],
+            ooc_notes=[],
+            has_roleplay_notation=False,
+            response_mode="plain_chat",
         ),
         memory={
             "user_fact": [OrchestratorMemoryItem(id="m1", content="born in December", importance=2, created_at=now)],

@@ -10,6 +10,7 @@ from app.schemas.orchestrator import (
     OrchestratorMemoryItem,
     OrchestratorMessageContext,
     OrchestratorProfileContext,
+    OrchestratorRoleplayContext,
     OrchestratorSceneContext,
     OrchestratorStateContext,
     OrchestratorLanguageContext,
@@ -18,6 +19,7 @@ from app.schemas.orchestrator import (
 )
 from app.services.language_robustness import analyze_language_robustness
 from app.services.name_addressing import build_user_address_policy, decide_name_usage
+from app.services.roleplay_protocol import analyze_roleplay_notation
 from app.services.scene_service import get_or_create_scene
 from app.services.time_context import (
     DEFAULT_TIMEZONE,
@@ -104,6 +106,7 @@ def build_orchestrator_context(
     )
     world_state = build_world_state(scene_context)
     language_signal = analyze_language_robustness(current_user_message)
+    roleplay_signal = analyze_roleplay_notation(current_user_message)
 
     return OrchestratorContext(
         character_id=character.id,
@@ -164,6 +167,14 @@ def build_orchestrator_context(
             typo_hints=language_signal.typo_hints,
             has_colloquial_language=language_signal.has_colloquial_language,
             guidance=language_signal.guidance,
+        ),
+        roleplay_context=OrchestratorRoleplayContext(
+            action_segments=roleplay_signal.action_segments,
+            thought_segments=roleplay_signal.thought_segments,
+            scene_notes=roleplay_signal.scene_notes,
+            ooc_notes=roleplay_signal.ooc_notes,
+            has_roleplay_notation=roleplay_signal.has_roleplay_notation,
+            response_mode=roleplay_signal.response_mode,
         ),
         memory=memories_by_category,
         recent_messages=[

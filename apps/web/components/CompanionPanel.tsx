@@ -688,6 +688,20 @@ export function CompanionPanel({
         )}
       </section>
 
+      <details className="character-settings">
+        <summary>Roleplay format</summary>
+        <div className="stack">
+          <p className="muted">Optional notation for keeping speech, actions, thoughts, and technical notes distinct.</p>
+          <p><code>*action*</code> — a physical action</p>
+          <p><code>~thought~</code> — the writer&apos;s private thought</p>
+          <p><code>[scene: note]</code> — a detail compatible with the active scene</p>
+          <p><code>((OOC: note))</code> — an out-of-character note</p>
+          <small>
+            Plain text remains spoken dialogue. Scene notes do not replace Update current scene or Start new scene.
+          </small>
+        </div>
+      </details>
+
       <section className="stack">
         <h2 className="panel-title">Memory</h2>
         <div className="memory-summary">

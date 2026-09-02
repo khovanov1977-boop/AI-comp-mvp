@@ -146,7 +146,7 @@ Focus:
 
 ## Sprint 2.8: Roleplay Communication Protocol
 
-Status: planned.
+Status: completed and pushed.
 
 Focus:
 - Define a shared format for speech, actions, thoughts, scene notes, and out-of-character notes.
