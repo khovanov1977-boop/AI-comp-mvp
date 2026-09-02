@@ -122,7 +122,7 @@ Focus:
 
 ## Sprint 2.6: User Profile v2 + Name Forms
 
-Status: implemented locally.
+Status: completed and pushed.
 
 Focus:
 - Add optional user profile fields such as age.
@@ -134,13 +134,15 @@ Focus:
 
 ## Sprint 2.7: Response Length + Style Control
 
-Status: planned.
+Status: completed and pushed.
 
 Focus:
-- Let the user configure desired response length.
-- Ask the LLM to write within the selected length instead of cutting text after generation.
+- Let the model choose a natural response length from conversational context.
+- Ask the LLM to write within the context-appropriate length instead of cutting text after generation.
 - Avoid unfinished or abruptly truncated assistant messages.
 - Keep concise replies as the default.
+- Distinguish brief social check-ins from requests for emotional introspection.
+- Keep the provider output ceiling at 500 tokens for every response.
 
 ## Sprint 2.8: Roleplay Communication Protocol
 
