@@ -44,6 +44,12 @@ SCENE_COLUMNS = {
     "updated_at": "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
 }
 
+MESSAGE_COLUMNS = {
+    "audio_url": "TEXT NOT NULL DEFAULT ''",
+    "audio_mime_type": "VARCHAR NOT NULL DEFAULT ''",
+    "audio_duration_ms": "INTEGER NULL",
+}
+
 
 def legacy_local_timestamp_to_utc(value: datetime | str) -> datetime:
     parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
@@ -84,7 +90,9 @@ def ensure_dev_schema(engine: Engine) -> None:
     user_columns = {column["name"] for column in inspector.get_columns("users")}
     scene_exists = inspector.has_table("character_scenes")
     memory_exists = inspector.has_table("memories")
+    message_exists = inspector.has_table("messages")
     scene_columns = {column["name"] for column in inspector.get_columns("character_scenes")} if scene_exists else set()
+    message_columns = {column["name"] for column in inspector.get_columns("messages")} if message_exists else set()
     needs_context_timestamp_migration = scene_exists and "context_timestamp_basis" not in scene_columns
 
     with engine.begin() as connection:
@@ -96,6 +104,11 @@ def ensure_dev_schema(engine: Engine) -> None:
         for column_name, column_definition in USER_COLUMNS.items():
             if column_name not in user_columns:
                 connection.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_definition}"))
+
+        if message_exists:
+            for column_name, column_definition in MESSAGE_COLUMNS.items():
+                if column_name not in message_columns:
+                    connection.execute(text(f"ALTER TABLE messages ADD COLUMN {column_name} {column_definition}"))
 
         if not scene_exists:
             column_sql = ", ".join(f"{column_name} {column_definition}" for column_name, column_definition in SCENE_COLUMNS.items())

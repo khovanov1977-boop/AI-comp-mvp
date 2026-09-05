@@ -1,5 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -994,6 +996,14 @@ class OrchestratorContextTestCase(unittest.TestCase):
             connection.execute(text("CREATE TABLE users (id VARCHAR PRIMARY KEY)"))
             connection.execute(
                 text(
+                    "CREATE TABLE messages ("
+                    "id VARCHAR PRIMARY KEY, character_id VARCHAR NOT NULL, role VARCHAR NOT NULL, "
+                    "content TEXT NOT NULL, message_type VARCHAR NOT NULL DEFAULT 'text', "
+                    "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+                )
+            )
+            connection.execute(
+                text(
                     "CREATE TABLE character_scenes ("
                     "id VARCHAR PRIMARY KEY, character_id VARCHAR UNIQUE NOT NULL, "
                     "presence_mode VARCHAR NOT NULL DEFAULT 'remote_chat', "
@@ -1025,6 +1035,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
         user_columns = {column["name"] for column in inspect(legacy_engine).get_columns("users")}
         self.assertTrue(
             {"formal_name", "preferred_name", "casual_name", "vocative_name", "age"}.issubset(user_columns)
+        )
+        message_columns = {column["name"] for column in inspect(legacy_engine).get_columns("messages")}
+        self.assertTrue(
+            {"audio_url", "audio_mime_type", "audio_duration_ms"}.issubset(message_columns)
         )
         scene_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_scenes")}
         self.assertIn("context_started_at", scene_columns)
@@ -1255,6 +1269,95 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIsNotNone(preserved_character.profile)
         self.assertIsNotNone(preserved_character.state)
         self.assertIsNotNone(preserved_character.scene)
+
+    def test_voice_message_upload_is_stored_playable_and_removed_with_chat(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ):
+                    client = TestClient(app)
+                    upload_response = client.post(
+                        f"/voice/messages/{self.character.id}",
+                        content=b"test-webm-audio",
+                        headers={
+                            "Content-Type": "audio/webm;codecs=opus",
+                            "X-Audio-Duration-Ms": "4250",
+                        },
+                    )
+                    history_response = client.get(f"/chat/{self.character.id}")
+
+                    self.assertEqual(upload_response.status_code, 200)
+                    payload = upload_response.json()
+                    self.assertEqual(payload["role"], "user")
+                    self.assertEqual(payload["content"], "")
+                    self.assertEqual(payload["message_type"], "voice")
+                    self.assertEqual(payload["audio_mime_type"], "audio/webm")
+                    self.assertEqual(payload["audio_duration_ms"], 4250)
+                    self.assertTrue(payload["audio_url"].endswith(".webm"))
+
+                    relative_file_path = payload["audio_url"].removeprefix("/voice-files/")
+                    stored_file = Path(temporary_directory) / relative_file_path
+                    self.assertEqual(stored_file.read_bytes(), b"test-webm-audio")
+                    self.assertEqual(history_response.json(), [payload])
+                    self.db.expire_all()
+                    context = build_orchestrator_context(
+                        self.db,
+                        self.character,
+                        "Text sent after an untranscribed recording",
+                    )
+                    self.assertEqual(context.recent_messages, [])
+
+                    clear_response = client.delete(f"/chat/{self.character.id}")
+                    self.assertEqual(clear_response.status_code, 200)
+                    self.assertEqual(clear_response.json()["deleted_messages"], 1)
+                    self.assertFalse(stored_file.exists())
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_voice_message_upload_rejects_unsupported_audio(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ):
+                    client = TestClient(app)
+                    response = client.post(
+                        f"/voice/messages/{self.character.id}",
+                        content=b"not-audio",
+                        headers={
+                            "Content-Type": "text/plain",
+                            "X-Audio-Duration-Ms": "1000",
+                        },
+                    )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Unsupported audio format")
+        self.db.expire_all()
+        self.assertEqual(
+            self.db.scalars(select(Message).where(Message.character_id == self.character.id)).all(),
+            [],
+        )
 
     def test_delete_character_removes_character_data_but_keeps_shared_user(self) -> None:
         self.add_context_records()

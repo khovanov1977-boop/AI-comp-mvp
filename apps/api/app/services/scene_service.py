@@ -43,7 +43,11 @@ def build_finished_scene_memory(
 ) -> Memory:
     message_query = (
         select(Message)
-        .where(Message.character_id == character.id, Message.role == "user")
+        .where(
+            Message.character_id == character.id,
+            Message.role == "user",
+            Message.content != "",
+        )
         .order_by(Message.created_at.desc())
         .limit(SCENE_MEMORY_MESSAGE_LIMIT)
     )

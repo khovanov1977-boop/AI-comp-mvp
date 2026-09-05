@@ -352,6 +352,57 @@ select {
   flex: 1;
 }
 
+.voice-button {
+  white-space: nowrap;
+}
+
+.voice-recorder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.voice-recorder strong {
+  flex: 1;
+  font-size: 14px;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #b83232;
+  box-shadow: 0 0 0 4px #f7dddd;
+}
+
+.voice-message {
+  min-width: min(320px, 64vw);
+  display: grid;
+  gap: 7px;
+}
+
+.voice-message > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.voice-message audio {
+  display: block;
+  width: 100%;
+  height: 36px;
+}
+
+.voice-message p,
+.voice-message small {
+  margin: 0;
+}
+
 .mood-row {
   display: grid;
   gap: 5px;
@@ -663,5 +714,15 @@ select {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .composer,
+  .voice-recorder {
+    flex-wrap: wrap;
+  }
+
+  .composer input,
+  .voice-recorder strong {
+    flex-basis: 100%;
   }
 }

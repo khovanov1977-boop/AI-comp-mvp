@@ -59,7 +59,7 @@ def build_orchestrator_context(
 
     recent_message_query = (
         select(Message)
-        .where(Message.character_id == character.id)
+        .where(Message.character_id == character.id, Message.content != "")
         .order_by(Message.created_at.desc())
         .limit(recent_message_limit)
     )

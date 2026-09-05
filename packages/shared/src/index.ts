@@ -31,6 +31,9 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   message_type: "text" | "voice" | "image" | "video";
+  audio_url: string;
+  audio_mime_type: string;
+  audio_duration_ms: number | null;
   created_at: string;
 };
 

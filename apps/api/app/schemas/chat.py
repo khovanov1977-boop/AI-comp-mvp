@@ -36,6 +36,9 @@ class MessageRead(BaseModel):
     role: str
     content: str
     message_type: str
+    audio_url: str = ""
+    audio_mime_type: str = ""
+    audio_duration_ms: int | None = None
     created_at: datetime
 
 

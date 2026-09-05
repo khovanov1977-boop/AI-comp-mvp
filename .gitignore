@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 *.db
+apps/api/data/
 frontend-dev*.log
 node_modules/
 .next/

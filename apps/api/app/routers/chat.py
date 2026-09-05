@@ -26,6 +26,7 @@ from app.routers.characters import to_character_read
 from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_service import get_or_create_scene
+from app.services.voice_storage import delete_voice_file
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 MEMORY_CONTEXT_LIMIT = 8
@@ -94,6 +95,15 @@ def clear_chat_history(character_id: str, db: Session = Depends(get_db)) -> Chat
     character = db.get(Character, character_id)
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
+
+    audio_urls = db.scalars(
+        select(Message.audio_url).where(
+            Message.character_id == character_id,
+            Message.audio_url != "",
+        )
+    ).all()
+    for audio_url in audio_urls:
+        delete_voice_file(audio_url)
 
     delete_result = db.execute(delete(Message).where(Message.character_id == character_id))
     preserved_memories = db.scalar(

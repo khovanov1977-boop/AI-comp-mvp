@@ -1,12 +1,14 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import Base, engine
 from app.models import *  # noqa: F403
 from app.routers import characters, chat, debug, health, limits, media, memories, scenes, users, voice
 from app.schema_sync import ensure_dev_schema
+from app.services.voice_storage import VOICE_STORAGE_ROOT
 
 app = FastAPI(title="AI Companion API", version="0.0.1")
 
@@ -42,6 +44,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/voice-files", StaticFiles(directory=VOICE_STORAGE_ROOT, check_dir=False), name="voice-files")
 
 
 @app.on_event("startup")

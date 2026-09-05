@@ -165,6 +165,49 @@ Focus:
 - Keep the shared global user profile when a character is deleted.
 - Require explicit confirmation before destructive actions.
 
+## Sprint 3.0: Voice Message Foundation
+
+Status: completed and pushed.
+
+Focus:
+- Record microphone audio in the browser.
+- Stop recording separately, then send it without a preview step.
+- Cancel an active recording before it is sent.
+- Store real audio files locally and connect them to chat messages.
+- Play sent voice messages directly in chat history.
+- Remove voice files when chat history or the character is deleted.
+- Keep speech recognition and character voice generation outside this foundation sprint.
+
+## Sprint 3.1: Incoming Voice + Transcription
+
+Status: planned.
+
+Focus:
+- Add a provider-independent speech-to-text interface.
+- Store the transcript together with the original voice message.
+- Send the transcript through the existing character orchestrator.
+- Make transcription failure recoverable without losing the recording.
+
+## Sprint 3.2: Character Voice Generation
+
+Status: planned.
+
+Focus:
+- Add a provider-independent text-to-speech interface.
+- Generate audio from the character's normal text response.
+- Preserve the text reply when voice generation fails.
+- Support a stable voice selection for each character.
+
+## Sprint 3.3: Voice UX + Reliability
+
+Status: planned.
+
+Focus:
+- Add clear recording, uploading, transcribing, and generation states.
+- Add retry behavior and format compatibility checks.
+- Finalize duration and file-size limits.
+- Improve mobile recording controls.
+
 ## Backlog: Web Tools / Internet Access
 
 Status: deferred.

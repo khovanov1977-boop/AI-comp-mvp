@@ -2,6 +2,13 @@ import type { Character, ChatMessage, CompanionContext, Memory, UserProfile } fr
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export function getApiAssetUrl(path: string) {
+  if (!path || /^https?:\/\//i.test(path)) {
+    return path;
+  }
+  return `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -96,6 +103,30 @@ export function updateUserProfile(input: UserProfileUpdateInput) {
 
 export function getChatHistory(characterId: string) {
   return request<ChatMessage[]>(`/chat/${characterId}`);
+}
+
+export async function uploadVoiceMessage(characterId: string, audio: Blob, durationMs: number) {
+  const response = await fetch(`${API_URL}/voice/messages/${characterId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": audio.type || "audio/webm",
+      "X-Audio-Duration-Ms": String(Math.max(1, Math.round(durationMs))),
+    },
+    body: audio,
+  });
+
+  if (!response.ok) {
+    let message = `Voice upload failed: ${response.status}`;
+    try {
+      const payload = await response.json();
+      message = payload?.detail?.message ?? payload?.detail ?? message;
+    } catch {
+      // Keep the status-based message when the API does not return JSON.
+    }
+    throw new Error(message);
+  }
+
+  return response.json() as Promise<ChatMessage>;
 }
 
 export type ChatExportData = {

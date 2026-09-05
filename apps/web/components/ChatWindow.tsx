@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { ChatMessage } from "@ai-companion/shared";
-import { getChatHistory, retryChatMessage, sendChatMessage } from "../lib/api";
+import { getChatHistory, retryChatMessage, sendChatMessage, uploadVoiceMessage } from "../lib/api";
 import { MessageBubble } from "./MessageBubble";
 
 const MIN_REPLY_REVEAL_DELAY_MS = 700;
 const MAX_REPLY_REVEAL_DELAY_MS = 4200;
+const MAX_VOICE_DURATION_MS = 120_000;
 
 function sleep(delayMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs));
@@ -31,6 +32,16 @@ function getFriendlyErrorMessage(message: string) {
   return message;
 }
 
+function formatRecordingTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function getSupportedAudioMimeType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
+}
+
 export function ChatWindow({
   characterId,
   historyRevision = 0,
@@ -43,9 +54,20 @@ export function ChatWindow({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [pendingVoice, setPendingVoice] = useState<{ audio: Blob; durationMs: number } | null>(null);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const recordingStartedAtRef = useRef(0);
+  const cancelRecordingRef = useRef(false);
+  const recordingIntervalRef = useRef<number | null>(null);
+  const recordingTimeoutRef = useRef<number | null>(null);
 
   async function loadHistory() {
     const history = await getChatHistory(characterId);
@@ -57,6 +79,22 @@ export function ChatWindow({
     setCanRetry(false);
     loadHistory().catch(() => setError("Could not load chat history."));
   }, [characterId, historyRevision]);
+
+  useEffect(() => {
+    return () => {
+      cancelRecordingRef.current = true;
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (recordingIntervalRef.current !== null) {
+        window.clearInterval(recordingIntervalRef.current);
+      }
+      if (recordingTimeoutRef.current !== null) {
+        window.clearTimeout(recordingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -111,6 +149,152 @@ export function ChatWindow({
     }
   }
 
+  function clearRecordingResources() {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    if (recordingIntervalRef.current !== null) {
+      window.clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    if (recordingTimeoutRef.current !== null) {
+      window.clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  }
+
+  function finishRecordedVoice(recorder: MediaRecorder) {
+    const durationMs = Math.min(
+      MAX_VOICE_DURATION_MS,
+      Math.max(1, Date.now() - recordingStartedAtRef.current),
+    );
+    const chunks = voiceChunksRef.current;
+    voiceChunksRef.current = [];
+    const wasCancelled = cancelRecordingRef.current;
+    clearRecordingResources();
+
+    if (wasCancelled) {
+      return;
+    }
+
+    const audio = new Blob(chunks, {
+      type: recorder.mimeType || chunks[0]?.type || "audio/webm",
+    });
+    if (audio.size === 0) {
+      setError("The microphone did not produce an audio recording.");
+      return;
+    }
+    setPendingVoice({ audio, durationMs });
+  }
+
+  async function startVoiceRecording() {
+    if (isSending || isUploadingVoice || isRecording || pendingVoice) {
+      return;
+    }
+    setError("");
+    setCanRetry(false);
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Voice recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getSupportedAudioMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      cancelRecordingRef.current = false;
+      recordingStartedAtRef.current = Date.now();
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        finishRecordedVoice(recorder);
+      };
+      recorder.onerror = () => {
+        cancelRecordingRef.current = true;
+        setError("The microphone recording failed.");
+        if (recorder.state !== "inactive") {
+          recorder.stop();
+        } else {
+          clearRecordingResources();
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingIntervalRef.current = window.setInterval(() => {
+        setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000));
+      }, 250);
+      recordingTimeoutRef.current = window.setTimeout(() => {
+        if (recorder.state === "recording") {
+          recorder.stop();
+        }
+      }, MAX_VOICE_DURATION_MS);
+    } catch (caughtError) {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      clearRecordingResources();
+      const isPermissionError = caughtError instanceof DOMException && caughtError.name === "NotAllowedError";
+      setError(
+        isPermissionError
+          ? "Microphone access was denied. Allow microphone access in the browser and try again."
+          : "Could not start microphone recording.",
+      );
+    }
+  }
+
+  function stopVoiceRecording() {
+    cancelRecordingRef.current = false;
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
+  function cancelVoiceRecording() {
+    cancelRecordingRef.current = true;
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    } else {
+      voiceChunksRef.current = [];
+      clearRecordingResources();
+    }
+  }
+
+  async function sendPendingVoice() {
+    if (!pendingVoice || isUploadingVoice) {
+      return;
+    }
+    setIsUploadingVoice(true);
+    setError("");
+    try {
+      await uploadVoiceMessage(characterId, pendingVoice.audio, pendingVoice.durationMs);
+      setPendingVoice(null);
+      await loadHistory();
+      onAfterSend?.();
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : "Could not send voice message.";
+      setError(message);
+    } finally {
+      setIsUploadingVoice(false);
+    }
+  }
+
+  function discardPendingVoice() {
+    if (!isUploadingVoice) {
+      setPendingVoice(null);
+      setError("");
+    }
+  }
+
   return (
     <section>
       <div className="chat-window">
@@ -119,6 +303,7 @@ export function ChatWindow({
           <MessageBubble key={message.id} message={message} />
         ))}
         {isSending ? <div className="typing-indicator">Typing...</div> : null}
+        {isUploadingVoice ? <div className="typing-indicator">Sending voice message...</div> : null}
         <div ref={bottomRef} />
       </div>
       {error ? (
@@ -131,18 +316,56 @@ export function ChatWindow({
           ) : null}
         </div>
       ) : null}
-      <form className="composer" onSubmit={submit}>
-        <input
-          className="input"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Write a message"
-          disabled={isSending}
-        />
-        <button className="button" type="submit" disabled={isSending}>
-          Send
-        </button>
-      </form>
+      {isRecording ? (
+        <div className="voice-recorder" role="status" aria-live="polite">
+          <span className="recording-dot" aria-hidden="true" />
+          <strong>Recording {formatRecordingTime(recordingSeconds)}</strong>
+          <button className="secondary-button" type="button" onClick={cancelVoiceRecording}>
+            Cancel
+          </button>
+          <button className="button" type="button" onClick={stopVoiceRecording}>
+            Stop
+          </button>
+        </div>
+      ) : pendingVoice ? (
+        <div className="voice-recorder" role="status" aria-live="polite">
+          <strong>
+            Voice message ready · {formatRecordingTime(Math.max(1, Math.round(pendingVoice.durationMs / 1000)))}
+          </strong>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={isUploadingVoice}
+            onClick={discardPendingVoice}
+          >
+            Cancel
+          </button>
+          <button className="button" type="button" disabled={isUploadingVoice} onClick={sendPendingVoice}>
+            {isUploadingVoice ? "Sending..." : "Send voice"}
+          </button>
+        </div>
+      ) : (
+        <form className="composer" onSubmit={submit}>
+          <input
+            className="input"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Write a message"
+            disabled={isSending || isUploadingVoice}
+          />
+          <button
+            className="secondary-button voice-button"
+            type="button"
+            disabled={isSending || isUploadingVoice}
+            onClick={startVoiceRecording}
+          >
+            Voice
+          </button>
+          <button className="button" type="submit" disabled={isSending || isUploadingVoice}>
+            Send
+          </button>
+        </form>
+      )}
     </section>
   );
 }
