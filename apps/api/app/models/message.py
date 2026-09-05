@@ -18,6 +18,8 @@ class Message(Base):
     audio_url: Mapped[str] = mapped_column(Text, default="")
     audio_mime_type: Mapped[str] = mapped_column(String, default="")
     audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    transcription_status: Mapped[str] = mapped_column(String, default="not_applicable")
+    transcription_error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     character = relationship("Character", back_populates="messages")

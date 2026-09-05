@@ -34,6 +34,8 @@ export type ChatMessage = {
   audio_url: string;
   audio_mime_type: string;
   audio_duration_ms: number | null;
+  transcription_status: "not_applicable" | "pending" | "completed" | "failed";
+  transcription_error: string;
   created_at: string;
 };
 

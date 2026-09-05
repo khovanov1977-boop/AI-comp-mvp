@@ -105,6 +105,14 @@ export function getChatHistory(characterId: string) {
   return request<ChatMessage[]>(`/chat/${characterId}`);
 }
 
+export type VoiceChatResult = {
+  message: ChatMessage;
+  reply: string | null;
+  character_state: CompanionContext["character_state"];
+  error_type: string;
+  error_message: string;
+};
+
 export async function uploadVoiceMessage(characterId: string, audio: Blob, durationMs: number) {
   const response = await fetch(`${API_URL}/voice/messages/${characterId}`, {
     method: "POST",
@@ -126,7 +134,13 @@ export async function uploadVoiceMessage(characterId: string, audio: Blob, durat
     throw new Error(message);
   }
 
-  return response.json() as Promise<ChatMessage>;
+  return response.json() as Promise<VoiceChatResult>;
+}
+
+export function retryVoiceTranscription(messageId: string) {
+  return request<VoiceChatResult>(`/voice/messages/${messageId}/retry`, {
+    method: "POST",
+  });
 }
 
 export type ChatExportData = {

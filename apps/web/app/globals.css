@@ -403,6 +403,17 @@ select {
   margin: 0;
 }
 
+.voice-transcript {
+  border-top: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  padding-top: 7px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.voice-transcription-error {
+  color: #8f2929;
+}
+
 .mood-row {
   display: grid;
   gap: 5px;

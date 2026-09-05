@@ -20,6 +20,7 @@ from app.config import Settings
 from app.providers.llm_factory import get_llm_provider
 from app.providers.llm_mock import generate_reply
 from app.providers.llm_openai_compatible import LLMProviderError
+from app.providers.stt_openrouter import STTProviderError
 from app.services.character_engine import analyze_user_message, update_state_after_message
 from app.services.language_robustness import analyze_language_robustness
 from app.services.orchestrator import handle_chat_message
@@ -1038,7 +1039,13 @@ class OrchestratorContextTestCase(unittest.TestCase):
         )
         message_columns = {column["name"] for column in inspect(legacy_engine).get_columns("messages")}
         self.assertTrue(
-            {"audio_url", "audio_mime_type", "audio_duration_ms"}.issubset(message_columns)
+            {
+                "audio_url",
+                "audio_mime_type",
+                "audio_duration_ms",
+                "transcription_status",
+                "transcription_error",
+            }.issubset(message_columns)
         )
         scene_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_scenes")}
         self.assertIn("context_started_at", scene_columns)
@@ -1284,6 +1291,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
                 with patch(
                     "app.services.voice_storage.VOICE_STORAGE_ROOT",
                     Path(temporary_directory),
+                ), patch(
+                    "app.routers.voice.speech_to_text",
+                    return_value="Как у тебя дела?",
+                ), patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
                 ):
                     client = TestClient(app)
                     upload_response = client.post(
@@ -1298,28 +1311,41 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
                     self.assertEqual(upload_response.status_code, 200)
                     payload = upload_response.json()
-                    self.assertEqual(payload["role"], "user")
-                    self.assertEqual(payload["content"], "")
-                    self.assertEqual(payload["message_type"], "voice")
-                    self.assertEqual(payload["audio_mime_type"], "audio/webm")
-                    self.assertEqual(payload["audio_duration_ms"], 4250)
-                    self.assertTrue(payload["audio_url"].endswith(".webm"))
+                    voice_message = payload["message"]
+                    self.assertEqual(voice_message["role"], "user")
+                    self.assertEqual(voice_message["content"], "Как у тебя дела?")
+                    self.assertEqual(voice_message["message_type"], "voice")
+                    self.assertEqual(voice_message["audio_mime_type"], "audio/webm")
+                    self.assertEqual(voice_message["audio_duration_ms"], 4250)
+                    self.assertEqual(voice_message["transcription_status"], "completed")
+                    self.assertEqual(voice_message["transcription_error"], "")
+                    self.assertTrue(voice_message["audio_url"].endswith(".webm"))
+                    self.assertTrue(payload["reply"])
+                    self.assertEqual(payload["error_type"], "")
 
-                    relative_file_path = payload["audio_url"].removeprefix("/voice-files/")
+                    relative_file_path = voice_message["audio_url"].removeprefix("/voice-files/")
                     stored_file = Path(temporary_directory) / relative_file_path
                     self.assertEqual(stored_file.read_bytes(), b"test-webm-audio")
-                    self.assertEqual(history_response.json(), [payload])
+                    history_payload = history_response.json()
+                    self.assertEqual([item["role"] for item in history_payload], ["user", "assistant"])
+                    self.assertEqual(history_payload[0], voice_message)
                     self.db.expire_all()
                     context = build_orchestrator_context(
                         self.db,
                         self.character,
                         "Text sent after an untranscribed recording",
                     )
-                    self.assertEqual(context.recent_messages, [])
+                    self.assertEqual(
+                        [(item.role, item.content, item.message_type) for item in context.recent_messages],
+                        [
+                            ("user", "Как у тебя дела?", "voice"),
+                            ("assistant", payload["reply"], "text"),
+                        ],
+                    )
 
                     clear_response = client.delete(f"/chat/{self.character.id}")
                     self.assertEqual(clear_response.status_code, 200)
-                    self.assertEqual(clear_response.json()["deleted_messages"], 1)
+                    self.assertEqual(clear_response.json()["deleted_messages"], 2)
                     self.assertFalse(stored_file.exists())
         finally:
             app.dependency_overrides.clear()
@@ -1358,6 +1384,71 @@ class OrchestratorContextTestCase(unittest.TestCase):
             self.db.scalars(select(Message).where(Message.character_id == self.character.id)).all(),
             [],
         )
+
+    def test_failed_voice_transcription_keeps_audio_and_can_be_retried(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.routers.voice.speech_to_text",
+                    side_effect=STTProviderError("Speech recognition unavailable"),
+                ):
+                    client = TestClient(app)
+                    upload_response = client.post(
+                        f"/voice/messages/{self.character.id}",
+                        content=b"retryable-audio",
+                        headers={
+                            "Content-Type": "audio/webm",
+                            "X-Audio-Duration-Ms": "2100",
+                        },
+                    )
+
+                self.assertEqual(upload_response.status_code, 200)
+                failed_payload = upload_response.json()
+                failed_message = failed_payload["message"]
+                self.assertEqual(failed_payload["error_type"], "transcription_error")
+                self.assertEqual(failed_message["content"], "")
+                self.assertEqual(failed_message["transcription_status"], "failed")
+                self.assertEqual(
+                    failed_message["transcription_error"],
+                    "Speech recognition unavailable",
+                )
+                relative_file_path = failed_message["audio_url"].removeprefix("/voice-files/")
+                stored_file = Path(temporary_directory) / relative_file_path
+                self.assertEqual(stored_file.read_bytes(), b"retryable-audio")
+
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.routers.voice.speech_to_text",
+                    return_value="Теперь меня слышно",
+                ), patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
+                ):
+                    retry_response = client.post(
+                        f"/voice/messages/{failed_message['id']}/retry"
+                    )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(retry_response.status_code, 200)
+        retry_payload = retry_response.json()
+        self.assertEqual(retry_payload["error_type"], "")
+        self.assertTrue(retry_payload["reply"])
+        self.assertEqual(retry_payload["message"]["content"], "Теперь меня слышно")
+        self.assertEqual(retry_payload["message"]["transcription_status"], "completed")
 
     def test_delete_character_removes_character_data_but_keeps_shared_user(self) -> None:
         self.add_context_records()

@@ -16,10 +16,18 @@ export function VoiceMessagePlayer({
   audioUrl,
   durationMs,
   transcript,
+  transcriptionStatus,
+  transcriptionError,
+  isRetrying = false,
+  onRetry,
 }: {
   audioUrl: string;
   durationMs: number | null;
   transcript?: string;
+  transcriptionStatus: "not_applicable" | "pending" | "completed" | "failed";
+  transcriptionError?: string;
+  isRetrying?: boolean;
+  onRetry?: () => void;
 }) {
   return (
     <div className="voice-message">
@@ -31,7 +39,18 @@ export function VoiceMessagePlayer({
       ) : (
         <small>Audio file is unavailable.</small>
       )}
-      {transcript ? <p>{transcript}</p> : null}
+      {transcript ? <p className="voice-transcript">{transcript}</p> : null}
+      {transcriptionStatus === "pending" ? <small>Transcription was interrupted.</small> : null}
+      {transcriptionStatus === "failed" ? (
+        <div className="voice-transcription-error">
+          <small>{transcriptionError || "Could not transcribe this recording."}</small>
+        </div>
+      ) : null}
+      {onRetry && (transcriptionStatus === "pending" || transcriptionStatus === "failed") ? (
+        <button className="text-button" type="button" disabled={isRetrying} onClick={onRetry}>
+          {isRetrying ? "Transcribing..." : "Retry transcription"}
+        </button>
+      ) : null}
     </div>
   );
 }

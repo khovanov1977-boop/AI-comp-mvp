@@ -51,18 +51,32 @@ def save_voice_file(character_id: str, audio_bytes: bytes, content_type: str) ->
     return f"/voice-files/{storage_key}/{filename}", mime_type
 
 
-def delete_voice_file(audio_url: str) -> None:
+def resolve_voice_file(audio_url: str) -> Path | None:
     path = PurePosixPath(audio_url)
     if len(path.parts) != 4 or path.parts[:2] != ("/", "voice-files"):
-        return
+        return None
 
     storage_key, filename = path.parts[2:]
     if Path(filename).name != filename or Path(storage_key).name != storage_key:
-        return
+        return None
 
     file_path = (VOICE_STORAGE_ROOT / storage_key / filename).resolve()
     storage_root = VOICE_STORAGE_ROOT.resolve()
     if not file_path.is_relative_to(storage_root):
+        return None
+    return file_path
+
+
+def read_voice_file(audio_url: str) -> bytes:
+    file_path = resolve_voice_file(audio_url)
+    if not file_path or not file_path.is_file():
+        raise VoiceStorageError("Voice file is unavailable")
+    return file_path.read_bytes()
+
+
+def delete_voice_file(audio_url: str) -> None:
+    file_path = resolve_voice_file(audio_url)
+    if not file_path:
         return
     file_path.unlink(missing_ok=True)
     character_directory = file_path.parent

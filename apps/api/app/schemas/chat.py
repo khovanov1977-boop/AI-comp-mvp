@@ -39,6 +39,8 @@ class MessageRead(BaseModel):
     audio_url: str = ""
     audio_mime_type: str = ""
     audio_duration_ms: int | None = None
+    transcription_status: str = "not_applicable"
+    transcription_error: str = ""
     created_at: datetime
 
 
@@ -108,3 +110,11 @@ class ChatExportRead(BaseModel):
     scene_context: SceneContextRead
     memories: list[MemoryRead]
     messages: list[MessageRead]
+
+
+class VoiceChatResponse(BaseModel):
+    message: MessageRead
+    reply: str | None = None
+    character_state: CharacterStateRead
+    error_type: str = ""
+    error_message: str = ""

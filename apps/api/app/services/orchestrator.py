@@ -25,6 +25,20 @@ def generate_assistant_reply(db: Session, character: Character, user_message: st
 def handle_chat_message(db: Session, character: Character, user_message: str) -> tuple[str, Message]:
     inbound = Message(character_id=character.id, role="user", content=user_message, message_type="text")
     db.add(inbound)
+    db.commit()
+
+    return handle_existing_user_message(db, character, inbound)
+
+
+def handle_existing_user_message(
+    db: Session,
+    character: Character,
+    inbound: Message,
+) -> tuple[str, Message]:
+    if inbound.character_id != character.id or inbound.role != "user" or not inbound.content.strip():
+        raise ValueError("A non-empty user message is required")
+
+    user_message = inbound.content
     remember_user_message(db, character.id, user_message)
     db.commit()
     db.refresh(character)

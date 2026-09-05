@@ -180,7 +180,7 @@ Focus:
 
 ## Sprint 3.1: Incoming Voice + Transcription
 
-Status: planned.
+Status: completed and pushed.
 
 Focus:
 - Add a provider-independent speech-to-text interface.

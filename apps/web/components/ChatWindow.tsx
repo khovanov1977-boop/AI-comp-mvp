@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { ChatMessage } from "@ai-companion/shared";
-import { getChatHistory, retryChatMessage, sendChatMessage, uploadVoiceMessage } from "../lib/api";
+import {
+  getChatHistory,
+  retryChatMessage,
+  retryVoiceTranscription,
+  sendChatMessage,
+  uploadVoiceMessage,
+} from "../lib/api";
 import { MessageBubble } from "./MessageBubble";
 
 const MIN_REPLY_REVEAL_DELAY_MS = 700;
@@ -58,6 +64,7 @@ export function ChatWindow({
   const [isUploadingVoice, setIsUploadingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [pendingVoice, setPendingVoice] = useState<{ audio: Blob; durationMs: number } | null>(null);
+  const [retryingVoiceMessageId, setRetryingVoiceMessageId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -276,15 +283,49 @@ export function ChatWindow({
     setIsUploadingVoice(true);
     setError("");
     try {
-      await uploadVoiceMessage(characterId, pendingVoice.audio, pendingVoice.durationMs);
+      const response = await uploadVoiceMessage(characterId, pendingVoice.audio, pendingVoice.durationMs);
       setPendingVoice(null);
+      if (response.reply) {
+        await sleep(getReplyRevealDelay(response.reply));
+      }
       await loadHistory();
       onAfterSend?.();
+      if (response.error_message) {
+        setError(response.error_message);
+        setCanRetry(response.error_type.startsWith("llm_") || response.error_type === "chat_error");
+      }
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : "Could not send voice message.";
       setError(message);
     } finally {
       setIsUploadingVoice(false);
+    }
+  }
+
+  async function retryVoiceMessage(messageId: string) {
+    if (retryingVoiceMessageId) {
+      return;
+    }
+    setRetryingVoiceMessageId(messageId);
+    setError("");
+    setCanRetry(false);
+    try {
+      const response = await retryVoiceTranscription(messageId);
+      if (response.reply) {
+        await sleep(getReplyRevealDelay(response.reply));
+      }
+      await loadHistory();
+      onAfterSend?.();
+      if (response.error_message) {
+        setError(response.error_message);
+        setCanRetry(response.error_type.startsWith("llm_") || response.error_type === "chat_error");
+      }
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : "Could not retry transcription.";
+      setError(message);
+      await loadHistory().catch(() => undefined);
+    } finally {
+      setRetryingVoiceMessageId(null);
     }
   }
 
@@ -300,10 +341,15 @@ export function ChatWindow({
       <div className="chat-window">
         {messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            retryingVoiceMessageId={retryingVoiceMessageId}
+            onRetryVoice={retryVoiceMessage}
+          />
         ))}
         {isSending ? <div className="typing-indicator">Typing...</div> : null}
-        {isUploadingVoice ? <div className="typing-indicator">Sending voice message...</div> : null}
+        {isUploadingVoice ? <div className="typing-indicator">Processing voice message...</div> : null}
         <div ref={bottomRef} />
       </div>
       {error ? (

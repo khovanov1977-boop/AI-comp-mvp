@@ -1,4 +1,5 @@
 import unittest
+from base64 import b64encode
 import json
 from datetime import datetime, timezone
 
@@ -11,6 +12,13 @@ from app.providers.llm_openai_compatible import (
     LLMConfigurationError,
     LLMProviderError,
     OpenAICompatibleLLMProvider,
+)
+from app.providers import stt_factory
+from app.providers.stt_factory import get_stt_provider
+from app.providers.stt_openrouter import (
+    OpenRouterSTTProvider,
+    STTConfigurationError,
+    STTProviderError,
 )
 from app.schemas.orchestrator import (
     OrchestratorContext,
@@ -235,6 +243,91 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
 
         with self.assertRaisesRegex(LLMProviderError, "timed out"):
             provider.generate_reply(make_context())
+
+
+class OpenRouterSTTProviderTestCase(unittest.TestCase):
+    def test_stt_factory_reuses_llm_openrouter_credentials(self) -> None:
+        original_values = (
+            stt_factory.settings.stt_provider,
+            stt_factory.settings.stt_base_url,
+            stt_factory.settings.stt_api_key,
+            stt_factory.settings.stt_model,
+            stt_factory.settings.llm_base_url,
+            stt_factory.settings.llm_api_key,
+        )
+        stt_factory.settings.stt_provider = "openrouter"
+        stt_factory.settings.stt_base_url = ""
+        stt_factory.settings.stt_api_key = ""
+        stt_factory.settings.stt_model = "openai/whisper-large-v3"
+        stt_factory.settings.llm_base_url = "https://openrouter.ai/api/v1"
+        stt_factory.settings.llm_api_key = "shared-key"
+        try:
+            provider = get_stt_provider()
+        finally:
+            (
+                stt_factory.settings.stt_provider,
+                stt_factory.settings.stt_base_url,
+                stt_factory.settings.stt_api_key,
+                stt_factory.settings.stt_model,
+                stt_factory.settings.llm_base_url,
+                stt_factory.settings.llm_api_key,
+            ) = original_values
+
+        self.assertIsInstance(provider, OpenRouterSTTProvider)
+        self.assertEqual(provider.base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(provider.api_key, "shared-key")
+        self.assertEqual(provider.model, "openai/whisper-large-v3")
+
+    def test_stt_provider_sends_audio_without_prompt_and_returns_transcript(self) -> None:
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            captured["payload"] = request.read()
+            return httpx.Response(200, json={"text": "  Проверка распознавания  "})
+
+        provider = OpenRouterSTTProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="openai/whisper-large-v3",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        transcript = provider.transcribe(b"webm-audio", "audio/webm")
+        payload = json.loads(captured["payload"])
+
+        self.assertEqual(transcript, "Проверка распознавания")
+        self.assertEqual(captured["url"], "https://openrouter.ai/api/v1/audio/transcriptions")
+        self.assertEqual(captured["headers"]["authorization"], "Bearer test-key")
+        self.assertEqual(
+            payload,
+            {
+                "model": "openai/whisper-large-v3",
+                "input_audio": {
+                    "data": b64encode(b"webm-audio").decode("ascii"),
+                    "format": "webm",
+                },
+            },
+        )
+
+    def test_stt_provider_reports_configuration_and_remote_errors(self) -> None:
+        provider = OpenRouterSTTProvider(base_url="", api_key="", model="")
+        with self.assertRaisesRegex(STTConfigurationError, "STT_BASE_URL"):
+            provider.transcribe(b"audio", "audio/webm")
+
+        failing_provider = OpenRouterSTTProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="openai/whisper-large-v3",
+            client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(429, json={"error": "busy"})
+                )
+            ),
+        )
+        with self.assertRaisesRegex(STTProviderError, "HTTP 429"):
+            failing_provider.transcribe(b"audio", "audio/webm")
 
 
 if __name__ == "__main__":

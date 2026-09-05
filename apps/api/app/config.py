@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 60
     llm_temperature: float = 0.8
     llm_max_tokens: int = 500
+    stt_provider: str = "openrouter"
+    stt_base_url: str = ""
+    stt_api_key: str = ""
+    stt_model: str = "openai/whisper-large-v3"
+    stt_timeout_seconds: int = 90
 
     model_config = SettingsConfigDict(env_file=(".env", "../../.env"), extra="ignore")
 

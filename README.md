@@ -17,6 +17,7 @@ Sprint 0 skeleton for an AI Companion web app.
 - Open a character chat
 - Send a text message
 - Record, store, and play user voice messages
+- Transcribe user voice messages through OpenRouter and send them to the character
 - Get a mock AI response
 - Store user and assistant messages in PostgreSQL
 - Load chat history in the frontend
@@ -211,11 +212,11 @@ docker compose ps db
 - `POST /media/video`
 - `GET /media/{character_id}`
 - `POST /voice/tts`
-- `POST /voice/stt`
 - `POST /voice/messages/{character_id}`
+- `POST /voice/messages/{message_id}/retry`
 - `GET /limits`
 
 ## Notes
 
 The backend creates tables automatically on startup for Sprint 0 convenience. A production setup should replace this with migrations.
-Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription and character voice generation are not connected yet.
+Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription uses the configured OpenRouter credentials. Character voice generation is not connected yet.

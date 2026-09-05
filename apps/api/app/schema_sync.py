@@ -48,6 +48,8 @@ MESSAGE_COLUMNS = {
     "audio_url": "TEXT NOT NULL DEFAULT ''",
     "audio_mime_type": "VARCHAR NOT NULL DEFAULT ''",
     "audio_duration_ms": "INTEGER NULL",
+    "transcription_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",
+    "transcription_error": "TEXT NOT NULL DEFAULT ''",
 }
 
 
