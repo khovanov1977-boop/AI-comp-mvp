@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.character import CharacterRead
+
 
 class CharacterStateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -87,3 +89,19 @@ class CompanionContextRead(BaseModel):
     scene_context: SceneContextRead
     memory_meta: MemoryMetaRead
     memories: list[MemoryRead]
+
+
+class ChatHistoryClearRead(BaseModel):
+    status: str
+    character_id: str
+    deleted_messages: int
+    preserved_memories: int
+
+
+class ChatExportRead(BaseModel):
+    schema_version: int = 1
+    exported_at: datetime
+    character: CharacterRead
+    scene_context: SceneContextRead
+    memories: list[MemoryRead]
+    messages: list[MessageRead]

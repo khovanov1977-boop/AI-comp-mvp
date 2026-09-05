@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app.models.character import Character, CharacterProfile, CharacterScene, CharacterState
+from app.models.media_asset import IdentityReference, MediaAsset
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.user import User
@@ -1197,6 +1198,136 @@ class OrchestratorContextTestCase(unittest.TestCase):
         messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
         self.assertEqual([message.role for message in messages], ["user", "assistant"])
         self.assertEqual(messages[0].content, "Please retry this")
+
+    def test_chat_export_and_clear_history_preserve_character_context(self) -> None:
+        self.add_context_records()
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            export_response = client.get(f"/chat/{self.character.id}/export")
+            clear_response = client.delete(f"/chat/{self.character.id}")
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(export_response.status_code, 200)
+        export_payload = export_response.json()
+        self.assertEqual(export_payload["schema_version"], 1)
+        self.assertTrue(export_payload["exported_at"])
+        self.assertEqual(export_payload["character"]["id"], self.character.id)
+        self.assertEqual(export_payload["character"]["name"], "Alice")
+        self.assertEqual(export_payload["scene_context"]["character_id"], self.character.id)
+        self.assertEqual(
+            [(message["role"], message["content"]) for message in export_payload["messages"]],
+            [("user", "hello"), ("assistant", "hi")],
+        )
+        self.assertEqual(len(export_payload["memories"]), 5)
+
+        self.assertEqual(clear_response.status_code, 200)
+        self.assertEqual(
+            clear_response.json(),
+            {
+                "status": "cleared",
+                "character_id": self.character.id,
+                "deleted_messages": 2,
+                "preserved_memories": 5,
+            },
+        )
+
+        self.db.expire_all()
+        self.assertEqual(
+            self.db.scalars(select(Message).where(Message.character_id == self.character.id)).all(),
+            [],
+        )
+        self.assertEqual(
+            len(self.db.scalars(select(Memory).where(Memory.character_id == self.character.id)).all()),
+            5,
+        )
+        preserved_character = self.db.get(Character, self.character.id)
+        self.assertIsNotNone(preserved_character)
+        self.assertIsNotNone(preserved_character.profile)
+        self.assertIsNotNone(preserved_character.state)
+        self.assertIsNotNone(preserved_character.scene)
+
+    def test_delete_character_removes_character_data_but_keeps_shared_user(self) -> None:
+        self.add_context_records()
+        scene = get_or_create_scene(self.db, self.character)
+        user_id = self.character.user_id
+        character_id = self.character.id
+        self.db.add_all(
+            [
+                MediaAsset(
+                    character_id=character_id,
+                    media_type="image",
+                    url="mock://portrait",
+                    prompt="portrait",
+                ),
+                IdentityReference(
+                    character_id=character_id,
+                    reference_type="face",
+                    url="mock://reference",
+                    prompt="identity reference",
+                ),
+            ]
+        )
+        self.db.commit()
+        profile_id = self.character.profile.id
+        state_id = self.character.state.id
+        scene_id = scene.id
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            delete_response = client.delete(f"/characters/{character_id}")
+            missing_response = client.get(f"/characters/{character_id}")
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(
+            delete_response.json(),
+            {"status": "deleted", "character_id": character_id},
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(missing_response.status_code, 404)
+
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(Character, character_id))
+        self.assertIsNone(self.db.get(CharacterProfile, profile_id))
+        self.assertIsNone(self.db.get(CharacterState, state_id))
+        self.assertIsNone(self.db.get(CharacterScene, scene_id))
+        self.assertEqual(
+            self.db.scalars(select(Message).where(Message.character_id == character_id)).all(),
+            [],
+        )
+        self.assertEqual(
+            self.db.scalars(select(Memory).where(Memory.character_id == character_id)).all(),
+            [],
+        )
+        self.assertEqual(
+            self.db.scalars(select(MediaAsset).where(MediaAsset.character_id == character_id)).all(),
+            [],
+        )
+        self.assertEqual(
+            self.db.scalars(
+                select(IdentityReference).where(IdentityReference.character_id == character_id)
+            ).all(),
+            [],
+        )
+        self.assertIsNotNone(self.db.get(User, user_id))
 
 
 if __name__ == "__main__":

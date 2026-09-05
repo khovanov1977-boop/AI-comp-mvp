@@ -98,6 +98,36 @@ export function getChatHistory(characterId: string) {
   return request<ChatMessage[]>(`/chat/${characterId}`);
 }
 
+export type ChatExportData = {
+  schema_version: number;
+  exported_at: string;
+  character: Character;
+  scene_context: CompanionContext["scene_context"];
+  memories: Memory[];
+  messages: ChatMessage[];
+};
+
+export function exportChat(characterId: string) {
+  return request<ChatExportData>(`/chat/${characterId}/export`);
+}
+
+export function clearChatHistory(characterId: string) {
+  return request<{
+    status: string;
+    character_id: string;
+    deleted_messages: number;
+    preserved_memories: number;
+  }>(`/chat/${characterId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteCharacter(characterId: string) {
+  return request<{ status: string; character_id: string }>(`/characters/${characterId}`, {
+    method: "DELETE",
+  });
+}
+
 export function getCompanionContext(characterId: string) {
   return request<CompanionContext>(`/chat/${characterId}/context`);
 }

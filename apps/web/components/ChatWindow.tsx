@@ -31,7 +31,15 @@ function getFriendlyErrorMessage(message: string) {
   return message;
 }
 
-export function ChatWindow({ characterId, onAfterSend }: { characterId: string; onAfterSend?: () => void }) {
+export function ChatWindow({
+  characterId,
+  historyRevision = 0,
+  onAfterSend,
+}: {
+  characterId: string;
+  historyRevision?: number;
+  onAfterSend?: () => void;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -45,8 +53,10 @@ export function ChatWindow({ characterId, onAfterSend }: { characterId: string; 
   }
 
   useEffect(() => {
+    setError("");
+    setCanRetry(false);
     loadHistory().catch(() => setError("Could not load chat history."));
-  }, [characterId]);
+  }, [characterId, historyRevision]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

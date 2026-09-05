@@ -154,6 +154,17 @@ Focus:
 - Let characters use the same notation consistently.
 - Preserve scene and presence-mode constraints during roleplay.
 
+## Sprint 2.9: Data Control + Conversation Management
+
+Status: completed and pushed.
+
+Focus:
+- Export a complete character conversation snapshot as a downloadable JSON file.
+- Clear chat messages while preserving the character, current scene, emotional state, and saved memories.
+- Permanently delete a character together with its profile, state, scene, messages, memories, and media records.
+- Keep the shared global user profile when a character is deleted.
+- Require explicit confirmation before destructive actions.
+
 ## Backlog: Web Tools / Internet Access
 
 Status: deferred.

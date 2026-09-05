@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.character import Character, CharacterProfile, CharacterScene, CharacterState
+from app.models.media_asset import IdentityReference, MediaAsset
+from app.models.memory import Memory
+from app.models.message import Message
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdate
 from app.services.scene_service import DEFAULT_SCENE
@@ -106,6 +109,19 @@ def get_character(character_id: str, db: Session = Depends(get_db)) -> Character
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
     return to_character_read(character)
+
+
+@router.delete("/{character_id}")
+def delete_character(character_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    for dependent_model in (Message, Memory, MediaAsset, IdentityReference):
+        db.execute(delete(dependent_model).where(dependent_model.character_id == character_id))
+    db.delete(character)
+    db.commit()
+    return {"status": "deleted", "character_id": character_id}
 
 
 @router.patch("/{character_id}", response_model=CharacterRead)

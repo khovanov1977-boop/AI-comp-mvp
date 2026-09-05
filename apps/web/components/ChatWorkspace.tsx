@@ -10,6 +10,7 @@ export function ChatWorkspace({ character }: { character: Character }) {
   const [currentCharacter, setCurrentCharacter] = useState(character);
   const [context, setContext] = useState<CompanionContext | null>(null);
   const [contextError, setContextError] = useState("");
+  const [historyRevision, setHistoryRevision] = useState(0);
 
   async function refreshContext() {
     setContextError("");
@@ -31,12 +32,17 @@ export function ChatWorkspace({ character }: { character: Character }) {
 
   return (
     <div className="chat-layout">
-      <ChatWindow characterId={currentCharacter.id} onAfterSend={() => refreshContext().catch(() => setContext(null))} />
+      <ChatWindow
+        characterId={currentCharacter.id}
+        historyRevision={historyRevision}
+        onAfterSend={() => refreshContext().catch(() => setContext(null))}
+      />
       <CompanionPanel
         character={currentCharacter}
         context={context}
         contextError={contextError}
         onCharacterChange={setCurrentCharacter}
+        onHistoryCleared={() => setHistoryRevision((current) => current + 1)}
         onMemoryChange={() => refreshContext()}
       />
     </div>

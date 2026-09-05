@@ -4,7 +4,17 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Character, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
-import { createMemory, deleteMemory, updateCharacter, updateMemory, updateScene, updateUserProfile } from "../lib/api";
+import {
+  clearChatHistory,
+  createMemory,
+  deleteCharacter,
+  deleteMemory,
+  exportChat,
+  updateCharacter,
+  updateMemory,
+  updateScene,
+  updateUserProfile,
+} from "../lib/api";
 import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
@@ -121,12 +131,14 @@ export function CompanionPanel({
   context,
   contextError,
   onCharacterChange,
+  onHistoryCleared,
   onMemoryChange,
 }: {
   character: Character;
   context: CompanionContext | null;
   contextError: string;
   onCharacterChange: (character: Character) => void;
+  onHistoryCleared: () => void;
   onMemoryChange: () => void;
 }) {
   const state = context?.character_state;
@@ -155,6 +167,9 @@ export function CompanionPanel({
   const [userDraft, setUserDraft] = useState<CompanionContext["user_context"] | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [userError, setUserError] = useState("");
+  const [isManagingData, setIsManagingData] = useState(false);
+  const [dataMessage, setDataMessage] = useState("");
+  const [dataError, setDataError] = useState("");
 
   useEffect(() => {
     setSceneDraft(sceneContext ?? null);
@@ -218,6 +233,76 @@ export function CompanionPanel({
       onMemoryChange();
     } catch {
       setMemoryError("Could not delete memory.");
+    }
+  }
+
+  async function downloadChatExport() {
+    setIsManagingData(true);
+    setDataError("");
+    setDataMessage("");
+    try {
+      const exportData = await exportChat(character.id);
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName =
+        character.name.replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]+/g, "-").replace(/^-+|-+$/g, "") ||
+        "character";
+      link.href = downloadUrl;
+      link.download = `${safeName}-conversation-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+      setDataMessage("Conversation export downloaded.");
+    } catch {
+      setDataError("Could not export conversation data.");
+    } finally {
+      setIsManagingData(false);
+    }
+  }
+
+  async function clearConversation() {
+    const confirmed = window.confirm(
+      `Clear all chat messages with ${character.name}? Character settings, the current scene, and saved memories will be kept.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsManagingData(true);
+    setDataError("");
+    setDataMessage("");
+    try {
+      const result = await clearChatHistory(character.id);
+      onHistoryCleared();
+      setDataMessage(
+        `Cleared ${result.deleted_messages} messages. ${result.preserved_memories} saved memories were kept.`,
+      );
+    } catch {
+      setDataError("Could not clear chat history.");
+    } finally {
+      setIsManagingData(false);
+    }
+  }
+
+  async function removeCharacter() {
+    const confirmed = window.confirm(
+      `Permanently delete ${character.name}, including all messages, memories, scene data, and media records? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsManagingData(true);
+    setDataError("");
+    setDataMessage("");
+    try {
+      await deleteCharacter(character.id);
+      window.location.assign("/characters");
+    } catch {
+      setDataError("Could not delete character.");
+      setIsManagingData(false);
     }
   }
 
@@ -826,6 +911,34 @@ export function CompanionPanel({
           </button>
         </form>
       </section>
+
+      <details className="character-settings">
+        <summary>Data &amp; conversation</summary>
+        <div className="data-controls">
+          <p className="muted">Export your data or permanently remove conversation data.</p>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={isManagingData}
+            onClick={downloadChatExport}
+          >
+            Export conversation
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={isManagingData}
+            onClick={clearConversation}
+          >
+            Clear chat history
+          </button>
+          <button className="danger-button" type="button" disabled={isManagingData} onClick={removeCharacter}>
+            Delete character and all data
+          </button>
+          {dataMessage ? <p className="data-success">{dataMessage}</p> : null}
+          {dataError ? <p className="chat-error">{dataError}</p> : null}
+        </div>
+      </details>
     </aside>
   );
 }

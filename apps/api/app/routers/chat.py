@@ -1,12 +1,17 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.character import Character
+from app.models.memory import Memory
 from app.models.message import Message
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
 from app.schemas.chat import (
+    ChatExportRead,
+    ChatHistoryClearRead,
     ChatRequest,
     ChatResponse,
     ChatRetryRequest,
@@ -17,12 +22,56 @@ from app.schemas.chat import (
     SceneContextRead,
     UserContextRead,
 )
+from app.routers.characters import to_character_read
 from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_service import get_or_create_scene
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 MEMORY_CONTEXT_LIMIT = 8
+
+
+def to_scene_context_read(scene) -> SceneContextRead:
+    return SceneContextRead(
+        character_id=scene.character_id,
+        presence_mode=scene.presence_mode,
+        location_name=scene.location_name,
+        location_description=scene.location_description,
+        time_description=scene.time_description,
+        user_position=scene.user_position,
+        character_position=scene.character_position,
+        context_started_at=scene.context_started_at,
+    )
+
+
+@router.get("/{character_id}/export", response_model=ChatExportRead)
+def export_chat(character_id: str, db: Session = Depends(get_db)) -> ChatExportRead:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    scene = get_or_create_scene(db, character)
+    memories = list(
+        db.scalars(
+            select(Memory)
+            .where(Memory.character_id == character_id)
+            .order_by(Memory.created_at.asc())
+        )
+    )
+    messages = list(
+        db.scalars(
+            select(Message)
+            .where(Message.character_id == character_id)
+            .order_by(Message.created_at.asc())
+        )
+    )
+    return ChatExportRead(
+        exported_at=datetime.now(timezone.utc),
+        character=to_character_read(character),
+        scene_context=to_scene_context_read(scene),
+        memories=memories,
+        messages=messages,
+    )
 
 
 @router.get("/{character_id}", response_model=list[MessageRead])
@@ -37,6 +86,25 @@ def get_chat_history(character_id: str, db: Session = Depends(get_db)) -> list[M
             .where(Message.character_id == character_id)
             .order_by(Message.created_at.asc())
         )
+    )
+
+
+@router.delete("/{character_id}", response_model=ChatHistoryClearRead)
+def clear_chat_history(character_id: str, db: Session = Depends(get_db)) -> ChatHistoryClearRead:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    delete_result = db.execute(delete(Message).where(Message.character_id == character_id))
+    preserved_memories = db.scalar(
+        select(func.count()).select_from(Memory).where(Memory.character_id == character_id)
+    )
+    db.commit()
+    return ChatHistoryClearRead(
+        status="cleared",
+        character_id=character_id,
+        deleted_messages=max(delete_result.rowcount or 0, 0),
+        preserved_memories=preserved_memories or 0,
     )
 
 
@@ -70,16 +138,7 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
             timezone=character.user.timezone if character.user else "Europe/Moscow",
             language=character.user.language if character.user else "ru",
         ),
-        scene_context=SceneContextRead(
-            character_id=scene.character_id,
-            presence_mode=scene.presence_mode,
-            location_name=scene.location_name,
-            location_description=scene.location_description,
-            time_description=scene.time_description,
-            user_position=scene.user_position,
-            character_position=scene.character_position,
-            context_started_at=scene.context_started_at,
-        ),
+        scene_context=to_scene_context_read(scene),
         memory_meta=MemoryMetaRead(
             total_count=total_count,
             visible_count=len(memories),

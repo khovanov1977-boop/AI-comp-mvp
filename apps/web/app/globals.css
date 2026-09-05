@@ -531,6 +531,37 @@ select {
   opacity: 0.65;
 }
 
+.data-controls {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.danger-button {
+  border: 1px solid #a53a3a;
+  border-radius: 8px;
+  background: #fff7f5;
+  color: #8f2929;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+
+.danger-button:hover {
+  background: #fce7e3;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.data-success {
+  color: #2e6b3d;
+  font-size: 13px;
+  margin: 0;
+}
+
 .memory-groups {
   display: grid;
   gap: 14px;
