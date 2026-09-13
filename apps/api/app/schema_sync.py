@@ -51,6 +51,10 @@ MESSAGE_COLUMNS = {
     "audio_duration_ms": "INTEGER NULL",
     "transcription_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",
     "transcription_error": "TEXT NOT NULL DEFAULT ''",
+    "voice_generation_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",
+    "voice_generation_error": "TEXT NOT NULL DEFAULT ''",
+    "voice_generation_input": "TEXT NOT NULL DEFAULT ''",
+    "voice_generation_voice_id": "VARCHAR NOT NULL DEFAULT ''",
 }
 
 

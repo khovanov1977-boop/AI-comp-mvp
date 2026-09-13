@@ -43,6 +43,9 @@ class MessageRead(BaseModel):
     audio_duration_ms: int | None = None
     transcription_status: str = "not_applicable"
     transcription_error: str = ""
+    voice_generation_status: str = "not_applicable"
+    voice_generation_error: str = ""
+    voice_generation_can_retry: bool = False
     created_at: datetime
 
 

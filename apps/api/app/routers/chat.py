@@ -29,7 +29,7 @@ from app.services.memory_service import get_memory_counts_by_category, list_char
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_service import get_or_create_scene
 from app.services.voice_intent import should_generate_voice_reply
-from app.services.voice_service import attach_character_voice
+from app.services.voice_service import attach_prepared_character_voice, prepare_character_voice
 from app.services.voice_storage import VoiceStorageError, delete_voice_file
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -43,18 +43,31 @@ def attach_requested_voice(
     reply_plan: CharacterReply,
 ) -> tuple[str, str]:
     try:
-        attach_character_voice(character, message, reply_plan)
+        prepare_character_voice(character, message, reply_plan)
+        db.add(message)
+        db.commit()
+        attach_prepared_character_voice(message)
         db.add(message)
         db.commit()
         return "", ""
     except (TTSConfigurationError, TTSProviderError, VoiceStorageError) as exc:
         db.rollback()
+        db.refresh(message)
+        message.voice_generation_status = "failed"
+        message.voice_generation_error = str(exc)
+        db.add(message)
+        db.commit()
         return (
             "voice_generation_error",
             f"Text reply was saved, but voice generation failed: {exc}",
         )
     except Exception as exc:
         db.rollback()
+        db.refresh(message)
+        message.voice_generation_status = "failed"
+        message.voice_generation_error = str(exc) or exc.__class__.__name__
+        db.add(message)
+        db.commit()
         return (
             "voice_generation_error",
             "Text reply was saved, but voice generation failed: "

@@ -1,4 +1,12 @@
-import type { Character, ChatMessage, CompanionContext, Memory, UserProfile, VoiceOption } from "@ai-companion/shared";
+import type {
+  Character,
+  ChatMessage,
+  CompanionContext,
+  Memory,
+  UserProfile,
+  VoiceOption,
+  VoiceUploadConstraints,
+} from "@ai-companion/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -77,6 +85,10 @@ export function listVoiceOptions() {
   return request<VoiceOption[]>("/voice/catalog");
 }
 
+export function getVoiceUploadConstraints() {
+  return request<VoiceUploadConstraints>("/voice/constraints");
+}
+
 export async function previewVoice(voiceId: string) {
   const response = await fetch(`${API_URL}/voice/preview`, {
     method: "POST",
@@ -139,12 +151,18 @@ export type VoiceChatResult = {
   error_message: string;
 };
 
-export async function uploadVoiceMessage(characterId: string, audio: Blob, durationMs: number) {
-  const response = await fetch(`${API_URL}/voice/messages/${characterId}`, {
+export async function uploadVoiceFile(
+  characterId: string,
+  audio: Blob,
+  durationMs: number,
+  uploadId: string,
+) {
+  const response = await fetch(`${API_URL}/voice/messages/${characterId}/upload`, {
     method: "POST",
     headers: {
       "Content-Type": audio.type || "audio/webm",
       "X-Audio-Duration-Ms": String(Math.max(1, Math.round(durationMs))),
+      "X-Voice-Upload-Id": uploadId,
     },
     body: audio,
   });
@@ -160,11 +178,23 @@ export async function uploadVoiceMessage(characterId: string, audio: Blob, durat
     throw new Error(message);
   }
 
-  return response.json() as Promise<VoiceChatResult>;
+  return response.json() as Promise<ChatMessage>;
 }
 
 export function retryVoiceTranscription(messageId: string) {
-  return request<VoiceChatResult>(`/voice/messages/${messageId}/retry`, {
+  return request<VoiceChatResult>(`/voice/messages/${messageId}/transcribe`, {
+    method: "POST",
+  });
+}
+
+export function generateVoiceReply(messageId: string) {
+  return request<VoiceChatResult>(`/voice/messages/${messageId}/reply`, {
+    method: "POST",
+  });
+}
+
+export function retryVoiceGeneration(messageId: string) {
+  return request<ChatMessage>(`/voice/messages/${messageId}/retry-generation`, {
     method: "POST",
   });
 }

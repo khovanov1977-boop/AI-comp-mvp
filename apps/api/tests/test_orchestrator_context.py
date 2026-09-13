@@ -1225,6 +1225,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
                 "audio_duration_ms",
                 "transcription_status",
                 "transcription_error",
+                "voice_generation_status",
+                "voice_generation_error",
+                "voice_generation_input",
+                "voice_generation_voice_id",
             }.issubset(message_columns)
         )
         scene_columns = {column["name"] for column in inspect(legacy_engine).get_columns("character_scenes")}
@@ -1636,6 +1640,95 @@ class OrchestratorContextTestCase(unittest.TestCase):
         finally:
             app.dependency_overrides.clear()
 
+    def test_voice_constraints_and_phased_processing_are_retry_safe(self) -> None:
+        class FakeTTSProvider:
+            def synthesize(self, _provider_input, _voice_id):
+                return SynthesizedSpeech(audio_bytes=b"phased-wave-audio", mime_type="audio/wav")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        upload_id = "7460b72c-1135-4d48-b93f-2cb5d6ea8955"
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.routers.voice.speech_to_text",
+                    return_value="Поэтапная проверка",
+                ) as transcribe, patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
+                ), patch(
+                    "app.services.voice_service.get_tts_provider",
+                    return_value=FakeTTSProvider(),
+                ):
+                    client = TestClient(app)
+                    constraints_response = client.get("/voice/constraints")
+                    missing_duration_response = client.post(
+                        f"/voice/messages/{self.character.id}/upload",
+                        content=b"missing-duration",
+                        headers={"Content-Type": "audio/webm"},
+                    )
+                    upload_response = client.post(
+                        f"/voice/messages/{self.character.id}/upload",
+                        content=b"phased-webm-audio",
+                        headers={
+                            "Content-Type": "audio/webm;codecs=opus",
+                            "X-Audio-Duration-Ms": "3200",
+                            "X-Voice-Upload-Id": upload_id,
+                        },
+                    )
+                    repeated_upload_response = client.post(
+                        f"/voice/messages/{self.character.id}/upload",
+                        content=b"must-not-create-a-duplicate",
+                        headers={
+                            "Content-Type": "audio/webm",
+                            "X-Audio-Duration-Ms": "3200",
+                            "X-Voice-Upload-Id": upload_id,
+                        },
+                    )
+                    history_after_upload = client.get(f"/chat/{self.character.id}").json()
+                    transcription_response = client.post(
+                        f"/voice/messages/{upload_id}/transcribe"
+                    )
+                    history_after_transcription = client.get(f"/chat/{self.character.id}").json()
+                    reply_response = client.post(f"/voice/messages/{upload_id}/reply")
+                    repeated_reply_response = client.post(f"/voice/messages/{upload_id}/reply")
+                    final_history = client.get(f"/chat/{self.character.id}").json()
+        finally:
+            app.dependency_overrides.clear()
+
+        constraints = constraints_response.json()
+        self.assertEqual(constraints_response.status_code, 200)
+        self.assertEqual(constraints["max_duration_ms"], 120_000)
+        self.assertEqual(constraints["max_file_size_bytes"], 10 * 1024 * 1024)
+        self.assertIn("audio/webm", constraints["accepted_mime_types"])
+        self.assertEqual(missing_duration_response.status_code, 400)
+        self.assertEqual(missing_duration_response.json()["detail"], "Voice message duration is required")
+        self.assertEqual(upload_response.status_code, 200)
+        self.assertEqual(repeated_upload_response.status_code, 200)
+        self.assertEqual(upload_response.json()["id"], upload_id)
+        self.assertEqual(repeated_upload_response.json()["id"], upload_id)
+        self.assertEqual(len(history_after_upload), 1)
+        self.assertEqual(history_after_upload[0]["transcription_status"], "pending")
+        transcribe.assert_called_once()
+        self.assertEqual(transcription_response.status_code, 200)
+        self.assertEqual(transcription_response.json()["reply"], None)
+        self.assertEqual(history_after_transcription[0]["content"], "Поэтапная проверка")
+        self.assertEqual(history_after_transcription[0]["transcription_status"], "completed")
+        self.assertEqual(reply_response.status_code, 200)
+        self.assertTrue(reply_response.json()["reply"])
+        self.assertEqual(repeated_reply_response.status_code, 200)
+        self.assertEqual(repeated_reply_response.json()["reply"], reply_response.json()["reply"])
+        self.assertEqual([message["role"] for message in final_history], ["user", "assistant"])
+
     def test_voice_message_upload_rejects_unsupported_audio(self) -> None:
         def override_get_db():
             db: Session = self.SessionLocal()
@@ -1791,6 +1884,74 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual([message.role for message in messages], ["user", "assistant"])
         self.assertEqual(messages[1].message_type, "text")
         self.assertEqual(messages[1].content, payload["reply"])
+        self.assertEqual(messages[1].voice_generation_status, "failed")
+        self.assertTrue(messages[1].voice_generation_can_retry)
+        self.assertIn("# TRANSCRIPT", messages[1].voice_generation_input)
+
+    def test_failed_voice_generation_can_retry_without_calling_llm_again(self) -> None:
+        class RecoveringTTSProvider:
+            def __init__(self):
+                self.calls = 0
+                self.inputs = []
+
+            def synthesize(self, provider_input, _voice_id):
+                self.calls += 1
+                self.inputs.append(provider_input)
+                if self.calls == 1:
+                    raise TTSProviderError("Temporary TTS failure")
+                return SynthesizedSpeech(audio_bytes=b"recovered-wave-audio", mime_type="audio/wav")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        provider = RecoveringTTSProvider()
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
+                ) as llm_provider, patch(
+                    "app.services.voice_service.get_tts_provider",
+                    return_value=provider,
+                ):
+                    client = TestClient(app)
+                    first_response = client.post(
+                        "/chat",
+                        json={
+                            "character_id": self.character.id,
+                            "message": "Ответь голосом",
+                        },
+                    )
+                    failed_history = client.get(f"/chat/{self.character.id}").json()
+                    assistant_message = failed_history[-1]
+                    retry_response = client.post(
+                        f"/voice/messages/{assistant_message['id']}/retry-generation"
+                    )
+                    final_history = client.get(f"/chat/{self.character.id}").json()
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.json()["error_type"], "voice_generation_error")
+        self.assertEqual(assistant_message["message_type"], "text")
+        self.assertEqual(assistant_message["voice_generation_status"], "failed")
+        self.assertTrue(assistant_message["voice_generation_can_retry"])
+        self.assertEqual(retry_response.status_code, 200)
+        self.assertEqual(retry_response.json()["message_type"], "voice")
+        self.assertEqual(retry_response.json()["voice_generation_status"], "completed")
+        self.assertFalse(retry_response.json()["voice_generation_can_retry"])
+        self.assertEqual(final_history[-1]["message_type"], "voice")
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(provider.inputs[0], provider.inputs[1])
+        self.assertEqual(llm_provider.call_count, 1)
 
     def test_delete_character_removes_character_data_but_keeps_shared_user(self) -> None:
         self.add_context_records()

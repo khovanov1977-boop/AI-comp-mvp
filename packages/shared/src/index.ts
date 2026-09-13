@@ -33,6 +33,12 @@ export type VoiceOption = {
   description: string;
 };
 
+export type VoiceUploadConstraints = {
+  max_duration_ms: number;
+  max_file_size_bytes: number;
+  accepted_mime_types: string[];
+};
+
 export type ChatMessage = {
   id: string;
   character_id: string;
@@ -44,6 +50,9 @@ export type ChatMessage = {
   audio_duration_ms: number | null;
   transcription_status: "not_applicable" | "pending" | "completed" | "failed";
   transcription_error: string;
+  voice_generation_status: "not_applicable" | "pending" | "completed" | "failed";
+  voice_generation_error: string;
+  voice_generation_can_retry: boolean;
   created_at: string;
 };
 

@@ -20,6 +20,18 @@ class Message(Base):
     audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     transcription_status: Mapped[str] = mapped_column(String, default="not_applicable")
     transcription_error: Mapped[str] = mapped_column(Text, default="")
+    voice_generation_status: Mapped[str] = mapped_column(String, default="not_applicable")
+    voice_generation_error: Mapped[str] = mapped_column(Text, default="")
+    voice_generation_input: Mapped[str] = mapped_column(Text, default="")
+    voice_generation_voice_id: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     character = relationship("Character", back_populates="messages")
+
+    @property
+    def voice_generation_can_retry(self) -> bool:
+        return bool(
+            self.voice_generation_status in {"pending", "failed"}
+            and self.voice_generation_input
+            and self.voice_generation_voice_id
+        )

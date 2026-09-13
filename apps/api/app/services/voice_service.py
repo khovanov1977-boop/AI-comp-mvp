@@ -144,14 +144,39 @@ def synthesize_character_speech(character: Character, reply: CharacterReply) -> 
     return get_tts_provider().synthesize(build_gemini_tts_input(character, reply), voice_id)
 
 
-def attach_character_voice(character: Character, message: Message, reply: CharacterReply) -> Message:
-    speech = synthesize_character_speech(character, reply)
-    audio_url, mime_type = save_voice_file(character.id, speech.audio_bytes, speech.mime_type)
+def prepare_character_voice(character: Character, message: Message, reply: CharacterReply) -> Message:
+    voice_id = character.profile.voice_id if character.profile else ""
+    if not is_supported_voice(voice_id):
+        raise TTSConfigurationError("Choose a voice in the character settings before sending a voice message")
+    message.voice_generation_input = build_gemini_tts_input(character, reply)
+    message.voice_generation_voice_id = voice_id
+    message.voice_generation_status = "pending"
+    message.voice_generation_error = ""
+    return message
+
+
+def attach_prepared_character_voice(message: Message) -> Message:
+    if not message.voice_generation_input or not is_supported_voice(message.voice_generation_voice_id):
+        raise TTSConfigurationError("Saved voice generation data is unavailable")
+    speech = get_tts_provider().synthesize(
+        message.voice_generation_input,
+        message.voice_generation_voice_id,
+    )
+    audio_url, mime_type = save_voice_file(message.character_id, speech.audio_bytes, speech.mime_type)
     message.message_type = "voice"
     message.audio_url = audio_url
     message.audio_mime_type = mime_type
     message.transcription_status = "not_applicable"
+    message.voice_generation_status = "completed"
+    message.voice_generation_error = ""
+    message.voice_generation_input = ""
+    message.voice_generation_voice_id = ""
     return message
+
+
+def attach_character_voice(character: Character, message: Message, reply: CharacterReply) -> Message:
+    prepare_character_voice(character, message, reply)
+    return attach_prepared_character_voice(message)
 
 
 def synthesize_voice_preview(voice_id: str) -> SynthesizedSpeech:

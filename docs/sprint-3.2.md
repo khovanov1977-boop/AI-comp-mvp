@@ -1,6 +1,6 @@
 # Sprint 3.2: Character Voice Generation
 
-Status: implemented and verified locally; awaiting commit.
+Status: completed and pushed.
 
 ## Goal
 

@@ -190,7 +190,7 @@ Focus:
 
 ## Sprint 3.2: Character Voice Generation
 
-Status: implemented and verified locally.
+Status: completed and pushed.
 
 Focus:
 - Add a provider-independent text-to-speech interface.
@@ -207,7 +207,7 @@ Focus:
 
 ## Sprint 3.3: Voice UX + Reliability
 
-Status: planned.
+Status: implemented and verified locally; awaiting review and commit.
 
 Focus:
 - Add clear recording, uploading, transcribing, and generation states.
