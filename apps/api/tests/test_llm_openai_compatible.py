@@ -2,6 +2,7 @@ import unittest
 from base64 import b64encode
 import json
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import httpx
 
@@ -20,6 +21,14 @@ from app.providers.stt_openrouter import (
     STTConfigurationError,
     STTProviderError,
 )
+from app.providers import tts_factory
+from app.providers.tts_factory import get_tts_provider
+from app.providers.tts_openrouter import (
+    OpenRouterTTSProvider,
+    TTSConfigurationError,
+    TTSProviderError,
+)
+from app.schemas.llm import character_reply_json_schema
 from app.schemas.orchestrator import (
     OrchestratorContext,
     OrchestratorLanguageContext,
@@ -133,6 +142,17 @@ def make_context() -> OrchestratorContext:
 
 
 class OpenAICompatibleProviderTestCase(unittest.TestCase):
+    def test_voice_reply_schema_disallows_private_thought_segments(self) -> None:
+        text_kinds = character_reply_json_schema(False)["properties"]["segments"]["items"][
+            "properties"
+        ]["kind"]["enum"]
+        voice_kinds = character_reply_json_schema(True)["properties"]["segments"]["items"][
+            "properties"
+        ]["kind"]["enum"]
+
+        self.assertIn("thought", text_kinds)
+        self.assertNotIn("thought", voice_kinds)
+
     def test_provider_factory_returns_mock_by_default(self) -> None:
         original_provider = llm_factory.settings.llm_provider
         llm_factory.settings.llm_provider = "mock"
@@ -172,7 +192,30 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
             captured["payload"] = request.read()
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"content": "Real provider reply"}}]},
+                json={
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "segments": [
+                                            {
+                                                "kind": "speech",
+                                                "text": "Real provider reply",
+                                                "audio_cue": "none",
+                                            }
+                                        ],
+                                        "delivery": {
+                                            "emotion": "neutral",
+                                            "pace": "natural",
+                                            "intensity": "balanced",
+                                        },
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                },
             )
 
         provider = OpenAICompatibleLLMProvider(
@@ -188,12 +231,14 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
         reply = provider.generate_reply(make_context())
         payload = json.loads(captured["payload"])
 
-        self.assertEqual(reply, "Real provider reply")
+        self.assertEqual(reply.segments[0].text, "Real provider reply")
         self.assertEqual(captured["url"], "http://localhost:11434/v1/chat/completions")
         self.assertEqual(captured["headers"]["authorization"], "Bearer test-key")
         self.assertEqual(payload["model"], "test-model")
         self.assertEqual(payload["temperature"], 0.7)
         self.assertEqual(payload["max_tokens"], 321)
+        self.assertEqual(payload["response_format"]["type"], "json_schema")
+        self.assertTrue(payload["response_format"]["json_schema"]["strict"])
         self.assertEqual(payload["messages"][0]["role"], "system")
         self.assertIn("character_name: Alice", payload["messages"][0]["content"])
         self.assertEqual(payload["messages"][-1], {"role": "user", "content": "How are you?"})
@@ -228,6 +273,24 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(LLMProviderError, "malformed response"):
+            provider.generate_reply(make_context())
+
+    def test_invalid_structured_reply_raises_clear_provider_error(self) -> None:
+        provider = OpenAICompatibleLLMProvider(
+            base_url="http://localhost:11434/v1",
+            api_key="",
+            model="test-model",
+            client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(
+                        200,
+                        json={"choices": [{"message": {"content": "not json"}}]},
+                    )
+                )
+            ),
+        )
+
+        with self.assertRaisesRegex(LLMProviderError, "malformed structured reply"):
             provider.generate_reply(make_context())
 
     def test_timeout_raises_clear_provider_error(self) -> None:
@@ -328,6 +391,189 @@ class OpenRouterSTTProviderTestCase(unittest.TestCase):
         )
         with self.assertRaisesRegex(STTProviderError, "HTTP 429"):
             failing_provider.transcribe(b"audio", "audio/webm")
+
+
+class OpenRouterTTSProviderTestCase(unittest.TestCase):
+    def test_tts_factory_reuses_llm_openrouter_credentials(self) -> None:
+        original_values = (
+            tts_factory.settings.tts_provider,
+            tts_factory.settings.tts_base_url,
+            tts_factory.settings.tts_api_key,
+            tts_factory.settings.tts_model,
+            tts_factory.settings.llm_base_url,
+            tts_factory.settings.llm_api_key,
+        )
+        tts_factory.settings.tts_provider = "openrouter"
+        tts_factory.settings.tts_base_url = ""
+        tts_factory.settings.tts_api_key = ""
+        tts_factory.settings.tts_model = "google/gemini-3.1-flash-tts-preview"
+        tts_factory.settings.llm_base_url = "https://openrouter.ai/api/v1"
+        tts_factory.settings.llm_api_key = "shared-key"
+        try:
+            provider = get_tts_provider()
+        finally:
+            (
+                tts_factory.settings.tts_provider,
+                tts_factory.settings.tts_base_url,
+                tts_factory.settings.tts_api_key,
+                tts_factory.settings.tts_model,
+                tts_factory.settings.llm_base_url,
+                tts_factory.settings.llm_api_key,
+            ) = original_values
+
+        self.assertIsInstance(provider, OpenRouterTTSProvider)
+        self.assertEqual(provider.base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(provider.api_key, "shared-key")
+
+    def test_tts_provider_sends_voice_and_returns_audio(self) -> None:
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["headers"] = request.headers
+            captured["payload"] = request.read()
+            return httpx.Response(200, content=b"\x01\x02\x03\x04", headers={"Content-Type": "audio/pcm"})
+
+        provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        provider_input = "# DIRECTOR'S NOTES\nSpeak warmly\n\n# TRANSCRIPT\nПривет"
+        result = provider.synthesize(provider_input, "Leda")
+        payload = json.loads(captured["payload"])
+
+        self.assertEqual(captured["url"], "https://openrouter.ai/api/v1/audio/speech")
+        self.assertEqual(captured["headers"]["authorization"], "Bearer test-key")
+        self.assertEqual(payload["model"], "google/gemini-3.1-flash-tts-preview")
+        self.assertEqual(payload["voice"], "Leda")
+        self.assertEqual(payload["response_format"], "pcm")
+        self.assertIn("Speak warmly", payload["input"])
+        self.assertIn("Привет", payload["input"])
+        self.assertTrue(result.audio_bytes.startswith(b"RIFF"))
+        self.assertEqual(result.audio_bytes[8:12], b"WAVE")
+        self.assertEqual(result.mime_type, "audio/wav")
+
+    def test_tts_provider_reports_configuration_and_remote_errors(self) -> None:
+        provider = OpenRouterTTSProvider(base_url="", api_key="", model="")
+        with self.assertRaisesRegex(TTSConfigurationError, "TTS_BASE_URL"):
+            provider.synthesize("hello", "Leda")
+
+        failing_provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(429, json={"error": "busy"})
+                )
+            ),
+        )
+        with self.assertRaisesRegex(TTSProviderError, "HTTP 429"):
+            failing_provider.synthesize("hello", "Leda")
+
+    def test_tts_provider_retries_transient_empty_audio_response(self) -> None:
+        attempts = 0
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return httpx.Response(
+                    502,
+                    json={"error": {"message": "Provider returned an empty audio stream"}},
+                )
+            return httpx.Response(200, content=b"\x01\x02", headers={"Content-Type": "audio/pcm"})
+
+        provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with patch("app.providers.tts_openrouter.time.sleep") as sleep:
+            result = provider.synthesize("hello", "Leda")
+
+        self.assertEqual(attempts, 2)
+        sleep.assert_called_once_with(2.0)
+        self.assertTrue(result.audio_bytes.startswith(b"RIFF"))
+
+    def test_tts_provider_can_recover_on_third_transient_attempt(self) -> None:
+        attempts = 0
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                return httpx.Response(
+                    502,
+                    json={"error": {"message": "Provider returned an empty audio stream"}},
+                )
+            return httpx.Response(200, content=b"\x01\x02", headers={"Content-Type": "audio/pcm"})
+
+        provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with patch("app.providers.tts_openrouter.time.sleep") as sleep:
+            result = provider.synthesize("hello", "Leda")
+
+        self.assertEqual(attempts, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2.0, 4.0])
+        self.assertTrue(result.audio_bytes.startswith(b"RIFF"))
+
+    def test_tts_provider_can_recover_after_longer_transient_failure(self) -> None:
+        attempts = 0
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 4:
+                return httpx.Response(
+                    502,
+                    json={"error": {"message": "Provider returned an empty audio stream"}},
+                )
+            return httpx.Response(200, content=b"\x01\x02", headers={"Content-Type": "audio/pcm"})
+
+        provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with patch("app.providers.tts_openrouter.time.sleep") as sleep:
+            result = provider.synthesize("hello", "Leda")
+
+        self.assertEqual(attempts, 4)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2.0, 4.0, 8.0])
+        self.assertTrue(result.audio_bytes.startswith(b"RIFF"))
+
+    def test_tts_provider_does_not_retry_invalid_400_input(self) -> None:
+        inputs: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.read())
+            inputs.append(payload["input"])
+            return httpx.Response(400, json={"error": {"message": "Provider returned 400"}})
+
+        provider = OpenRouterTTSProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key="test-key",
+            model="google/gemini-3.1-flash-tts-preview",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with self.assertRaisesRegex(TTSProviderError, "HTTP 400"):
+            provider.synthesize("# TRANSCRIPT\nПривет", "Leda")
+
+        self.assertEqual(inputs, ["# TRANSCRIPT\nПривет"])
 
 
 if __name__ == "__main__":

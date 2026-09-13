@@ -1,4 +1,4 @@
-import type { Character, ChatMessage, CompanionContext, Memory, UserProfile } from "@ai-companion/shared";
+import type { Character, ChatMessage, CompanionContext, Memory, UserProfile, VoiceOption } from "@ai-companion/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -49,6 +49,7 @@ export type CharacterCreateInput = {
   user_country: string;
   user_timezone: string;
   user_language: string;
+  voice_id: string;
   warmth: number;
   initiative: number;
   playfulness: number;
@@ -59,9 +60,11 @@ export type CharacterCreateInput = {
 
 export type CharacterUpdateInput = Pick<
   CharacterCreateInput,
+  | "gender"
   | "relationship_mode"
   | "personality_description"
   | "communication_style"
+  | "voice_id"
   | "warmth"
   | "initiative"
   | "playfulness"
@@ -69,6 +72,29 @@ export type CharacterUpdateInput = Pick<
   | "emotionality"
   | "rationality"
 >;
+
+export function listVoiceOptions() {
+  return request<VoiceOption[]>("/voice/catalog");
+}
+
+export async function previewVoice(voiceId: string) {
+  const response = await fetch(`${API_URL}/voice/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ voice_id: voiceId }),
+  });
+  if (!response.ok) {
+    let message = `Voice preview failed: ${response.status}`;
+    try {
+      const payload = await response.json();
+      message = payload?.detail?.message ?? payload?.detail ?? message;
+    } catch {
+      // Keep the status-based message when the API does not return JSON.
+    }
+    throw new Error(message);
+  }
+  return response.blob();
+}
 
 export function listCharacters() {
   return request<Character[]>("/characters");
@@ -178,14 +204,24 @@ export function getCompanionContext(characterId: string) {
 }
 
 export function sendChatMessage(characterId: string, message: string) {
-  return request<{ reply: string; character_state: CompanionContext["character_state"] }>("/chat", {
+  return request<{
+    reply: string;
+    character_state: CompanionContext["character_state"];
+    error_type: string;
+    error_message: string;
+  }>("/chat", {
     method: "POST",
     body: JSON.stringify({ character_id: characterId, message }),
   });
 }
 
 export function retryChatMessage(characterId: string) {
-  return request<{ reply: string; character_state: CompanionContext["character_state"] }>("/chat/retry", {
+  return request<{
+    reply: string;
+    character_state: CompanionContext["character_state"];
+    error_type: string;
+    error_message: string;
+  }>("/chat/retry", {
     method: "POST",
     body: JSON.stringify({ character_id: characterId }),
   });

@@ -9,6 +9,7 @@ from app.models.character import Character
 from app.models.memory import Memory
 from app.models.message import Message
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
+from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
 from app.schemas.chat import (
     ChatExportRead,
     ChatHistoryClearRead,
@@ -23,13 +24,42 @@ from app.schemas.chat import (
     UserContextRead,
 )
 from app.routers.characters import to_character_read
+from app.schemas.llm import CharacterReply
 from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_service import get_or_create_scene
-from app.services.voice_storage import delete_voice_file
+from app.services.voice_intent import should_generate_voice_reply
+from app.services.voice_service import attach_character_voice
+from app.services.voice_storage import VoiceStorageError, delete_voice_file
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 MEMORY_CONTEXT_LIMIT = 8
+
+
+def attach_requested_voice(
+    db: Session,
+    character: Character,
+    message: Message,
+    reply_plan: CharacterReply,
+) -> tuple[str, str]:
+    try:
+        attach_character_voice(character, message, reply_plan)
+        db.add(message)
+        db.commit()
+        return "", ""
+    except (TTSConfigurationError, TTSProviderError, VoiceStorageError) as exc:
+        db.rollback()
+        return (
+            "voice_generation_error",
+            f"Text reply was saved, but voice generation failed: {exc}",
+        )
+    except Exception as exc:
+        db.rollback()
+        return (
+            "voice_generation_error",
+            "Text reply was saved, but voice generation failed: "
+            f"{str(exc) or exc.__class__.__name__}",
+        )
 
 
 def to_scene_context_read(scene) -> SceneContextRead:
@@ -168,7 +198,7 @@ def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
         raise HTTPException(status_code=404, detail="Character not found")
 
     try:
-        reply, _message = handle_chat_message(db, character, payload.message)
+        reply, assistant_message, reply_plan = handle_chat_message(db, character, payload.message)
     except LLMConfigurationError as exc:
         db.rollback()
         raise HTTPException(
@@ -188,6 +218,16 @@ def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
             detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
         ) from exc
 
+    error_type = ""
+    error_message = ""
+    if should_generate_voice_reply(payload.message):
+        error_type, error_message = attach_requested_voice(
+            db,
+            character,
+            assistant_message,
+            reply_plan,
+        )
+
     state = character.state
     return ChatResponse(
         reply=reply,
@@ -197,6 +237,8 @@ def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatRespon
             attachment_level=state.attachment_level,
             energy_level=state.energy_level,
         ),
+        error_type=error_type,
+        error_message=error_message,
     )
 
 
@@ -206,8 +248,20 @@ def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> Chat
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
+    last_message = db.scalar(
+        select(Message)
+        .where(Message.character_id == character.id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    voice_requested = bool(
+        last_message
+        and last_message.role == "user"
+        and should_generate_voice_reply(last_message.content)
+    )
+
     try:
-        reply, _message = retry_last_user_message(db, character)
+        reply, assistant_message, reply_plan = retry_last_user_message(db, character)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -230,6 +284,16 @@ def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> Chat
             detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
         ) from exc
 
+    error_type = ""
+    error_message = ""
+    if voice_requested:
+        error_type, error_message = attach_requested_voice(
+            db,
+            character,
+            assistant_message,
+            reply_plan,
+        )
+
     state = character.state
     return ChatResponse(
         reply=reply,
@@ -239,4 +303,6 @@ def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> Chat
             attachment_level=state.attachment_level,
             energy_level=state.energy_level,
         ),
+        error_type=error_type,
+        error_message=error_message,
     )

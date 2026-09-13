@@ -5,6 +5,7 @@ from sqlalchemy.engine import Engine
 
 
 PROFILE_COLUMNS = {
+    "voice_id": "VARCHAR NOT NULL DEFAULT ''",
     "biography": "TEXT NOT NULL DEFAULT ''",
     "likes": "TEXT NOT NULL DEFAULT ''",
     "dislikes": "TEXT NOT NULL DEFAULT ''",

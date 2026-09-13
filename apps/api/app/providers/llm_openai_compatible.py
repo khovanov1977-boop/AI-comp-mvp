@@ -1,7 +1,10 @@
 from typing import Any
+import json
 
 import httpx
+from pydantic import ValidationError
 
+from app.schemas.llm import CharacterReply, character_reply_json_schema
 from app.schemas.orchestrator import OrchestratorContext
 from app.services.prompt_builder import ProviderMessage, build_provider_prompt
 
@@ -35,7 +38,7 @@ class OpenAICompatibleLLMProvider:
         self.max_tokens = max_tokens
         self.client = client
 
-    def generate_reply(self, context: OrchestratorContext) -> str:
+    def generate_reply(self, context: OrchestratorContext) -> CharacterReply:
         self._validate_config()
         prompt = build_provider_prompt(context)
         payload = {
@@ -43,7 +46,17 @@ class OpenAICompatibleLLMProvider:
             "messages": self._to_openai_messages(prompt.messages, prompt.system),
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "character_reply",
+                    "strict": True,
+                    "schema": character_reply_json_schema(context.voice_reply_requested),
+                },
+            },
         }
+        if "openrouter.ai" in self.base_url.casefold():
+            payload["provider"] = {"require_parameters": True}
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -70,7 +83,10 @@ class OpenAICompatibleLLMProvider:
 
         if not isinstance(content, str) or not content.strip():
             raise LLMProviderError("LLM provider returned empty response")
-        return content
+        try:
+            return CharacterReply.model_validate(json.loads(content))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise LLMProviderError("LLM provider returned malformed structured reply") from exc
 
     def _validate_config(self) -> None:
         if not self.base_url:

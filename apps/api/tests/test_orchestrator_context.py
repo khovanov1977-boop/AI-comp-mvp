@@ -21,16 +21,22 @@ from app.providers.llm_factory import get_llm_provider
 from app.providers.llm_mock import generate_reply
 from app.providers.llm_openai_compatible import LLMProviderError
 from app.providers.stt_openrouter import STTProviderError
+from app.providers.tts_base import SynthesizedSpeech
+from app.providers.tts_openrouter import TTSProviderError
+from app.schemas.llm import CharacterReply, CharacterReplyDelivery, CharacterReplySegment
 from app.services.character_engine import analyze_user_message, update_state_after_message
 from app.services.language_robustness import analyze_language_robustness
-from app.services.orchestrator import handle_chat_message
+from app.services.orchestrator import handle_chat_message, handle_existing_user_message
 from app.services.memory_service import remember_user_message
 from app.services.name_addressing import build_user_address_policy, contains_name, decide_name_usage
 from app.services.orchestrator_context import build_orchestrator_context
 from app.services.prompt_builder import build_provider_prompt
+from app.services.reply_renderer import build_spoken_transcript, render_character_reply
 from app.services.response_sanitizer import sanitize_assistant_reply
 from app.services.roleplay_protocol import analyze_roleplay_notation
 from app.services.scene_service import get_or_create_scene, update_scene
+from app.services.voice_intent import should_generate_voice_reply
+from app.services.voice_service import build_gemini_tts_input
 from app.schemas.scene import SceneUpdate
 from app.schema_sync import (
     ensure_dev_schema,
@@ -86,6 +92,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
             dislikes="Noise",
             language="ru",
             user_nickname="Tester",
+            voice_id="Leda",
             warmth=82,
             initiative=68,
             playfulness=37,
@@ -382,6 +389,116 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertFalse(plain.has_roleplay_notation)
         self.assertEqual(plain.response_mode, "plain_chat")
 
+    def test_voice_intent_recognizes_explicit_requests_and_negation(self) -> None:
+        for message in (
+            "Пришли мне голосовое",
+            "Пришлите мне голосовое",
+            "Скажи это голосом",
+            "Ответьте голосовым",
+            "Можешь записать аудиосообщение?",
+            "Хочу услышать твой голос",
+            "Озвучь этот ответ",
+            "Прочитай это вслух",
+            "А можно голосовое?",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(should_generate_voice_reply(message))
+
+        for message in (
+            "Как ты?",
+            "Не присылай голосовое, ответь текстом",
+            "Только текстом, пожалуйста",
+            "Давай без аудио",
+            "Не хочу голосовое",
+            "Голосовое не надо",
+        ):
+            with self.subTest(message=message):
+                self.assertFalse(should_generate_voice_reply(message))
+
+    def test_structured_reply_renders_chat_and_builds_separate_tts_transcript(self) -> None:
+        reply = CharacterReply(
+            segments=[
+                CharacterReplySegment(kind="speech", text="Леша, я всё помню."),
+                CharacterReplySegment(
+                    kind="action",
+                    text="смущённо смеётся и обнимает себя за плечи",
+                    audio_cue="giggle",
+                ),
+                CharacterReplySegment(kind="action", text="садится рядом", audio_cue="none"),
+                CharacterReplySegment(kind="thought", text="надеюсь, он не заметил"),
+                CharacterReplySegment(kind="speech", text="Продолжим?"),
+            ],
+            delivery=CharacterReplyDelivery(
+                emotion="embarrassed",
+                pace="natural",
+                intensity="subtle",
+            ),
+        )
+
+        self.assertEqual(
+            render_character_reply(reply),
+            "Леша, я всё помню. *смущённо смеётся и обнимает себя за плечи* "
+            "*садится рядом* ~надеюсь, он не заметил~ Продолжим?",
+        )
+        self.assertEqual(
+            build_spoken_transcript(reply),
+            "Леша, я всё помню. [giggles] Продолжим?",
+        )
+
+        provider_input = build_gemini_tts_input(self.character, reply)
+        self.assertIn("# AUDIO PROFILE", provider_input)
+        self.assertIn("# DIRECTOR'S NOTES", provider_input)
+        self.assertIn("# TRANSCRIPT", provider_input)
+        self.assertIn("Лёша, я всё помню. [giggles] Продолжим?", provider_input)
+        self.assertNotIn("обнимает себя за плечи", provider_input)
+        self.assertNotIn("садится рядом", provider_input)
+        self.assertNotIn("надеюсь, он не заметил", provider_input)
+
+    def test_structured_reply_keeps_spoken_words_out_of_action_segments(self) -> None:
+        reply = CharacterReply(
+            segments=[
+                CharacterReplySegment(kind="speech", text="Ох, Леш, ну ты и держишься!"),
+                CharacterReplySegment(
+                    kind="action",
+                    text="смеётся и хлопает по бутылке",
+                    audio_cue="laugh",
+                ),
+                CharacterReplySegment(kind="speech", text="Ладно, я попробую…"),
+                CharacterReplySegment(
+                    kind="action",
+                    text="делает глубокий вдох и отстраняется от телефона",
+                    audio_cue="gasp",
+                ),
+                CharacterReplySegment(kind="speech", text="Эй, Леш… я тут, на скамейке."),
+            ]
+        )
+
+        provider_input = build_gemini_tts_input(self.character, reply)
+        transcript = provider_input.split("# TRANSCRIPT\n", 1)[1]
+        self.assertEqual(
+            transcript,
+            "Ох, Лёш, ну ты и держишься! [laughs] Ладно, я попробую… "
+            "[gasp] Эй, Лёш… я тут, на скамейке.",
+        )
+        self.assertNotIn("хлопает", transcript)
+        self.assertNotIn("отстраняется", transcript)
+
+    def test_structured_reply_can_apply_audio_cue_to_spoken_segment(self) -> None:
+        reply = CharacterReply(
+            segments=[
+                CharacterReplySegment(
+                    kind="speech",
+                    text="Я тоже рада тебя слышать.",
+                    audio_cue="smile",
+                )
+            ]
+        )
+
+        self.assertEqual(
+            build_spoken_transcript(reply),
+            "[amused] Я тоже рада тебя слышать.",
+        )
+
     def test_orchestrator_context_includes_detected_roleplay_segments(self) -> None:
         context = build_orchestrator_context(
             self.db,
@@ -491,6 +608,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "directness": 60,
                     "emotionality": 75,
                     "rationality": 55,
+                    "voice_id": "Orus",
                 },
             )
         finally:
@@ -506,6 +624,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(response.json()["warmth"], 85)
         self.assertEqual(profile.initiative, 70)
         self.assertEqual(profile.playfulness, 35)
+        self.assertEqual(profile.voice_id, "Orus")
 
     def test_character_settings_can_be_updated_for_existing_character(self) -> None:
         def override_get_db():
@@ -521,6 +640,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
             response = client.patch(
                 f"/characters/{self.character.id}",
                 json={
+                    "gender": "male",
                     "relationship_mode": "colleague",
                     "personality_description": "Calm but curious",
                     "communication_style": "Direct and practical",
@@ -530,27 +650,79 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "directness": 90,
                     "emotionality": 30,
                     "rationality": 85,
+                    "voice_id": "Iapetus",
                 },
             )
             invalid_response = client.patch(f"/characters/{self.character.id}", json={"warmth": 101})
+            invalid_voice_response = client.patch(
+                f"/characters/{self.character.id}",
+                json={"voice_id": "NotARealVoice"},
+            )
+            incompatible_voice_response = client.patch(
+                f"/characters/{self.character.id}",
+                json={"voice_id": "Leda"},
+            )
         finally:
             app.dependency_overrides.clear()
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
+        self.assertEqual(payload["gender"], "male")
         self.assertEqual(payload["relationship_mode"], "colleague")
         self.assertEqual(payload["personality_description"], "Calm but curious")
         self.assertEqual(payload["communication_style"], "Direct and practical")
         self.assertEqual(payload["warmth"], 40)
         self.assertEqual(payload["initiative"], 80)
         self.assertEqual(payload["rationality"], 85)
+        self.assertEqual(payload["voice_id"], "Iapetus")
         self.assertEqual(invalid_response.status_code, 422)
+        self.assertEqual(invalid_voice_response.status_code, 422)
+        self.assertEqual(incompatible_voice_response.status_code, 422)
 
         self.db.expire_all()
         updated_character = self.db.get(Character, self.character.id)
+        self.assertEqual(updated_character.gender, "male")
         self.assertEqual(updated_character.relationship_mode, "colleague")
         self.assertEqual(updated_character.profile.directness, 90)
         self.assertEqual(updated_character.profile.emotionality, 30)
+
+    def test_voice_catalog_contains_curated_options_and_preview_returns_audio(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with patch(
+                "app.routers.voice.synthesize_voice_preview",
+                return_value=SynthesizedSpeech(audio_bytes=b"preview-wave", mime_type="audio/wav"),
+            ):
+                client = TestClient(app)
+                catalog_response = client.get("/voice/catalog")
+                preview_response = client.post("/voice/preview", json={"voice_id": "Iapetus"})
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(catalog_response.status_code, 200)
+        catalog = catalog_response.json()
+        self.assertEqual(len([voice for voice in catalog if voice["gender"] == "female"]), 12)
+        self.assertEqual(len([voice for voice in catalog if voice["gender"] == "male"]), 9)
+        self.assertIn("Pulcherrima", [voice["id"] for voice in catalog])
+        self.assertIn("Vindemiatrix", [voice["id"] for voice in catalog])
+        self.assertIn("Gacrux", [voice["id"] for voice in catalog])
+        self.assertIn("Iapetus", [voice["id"] for voice in catalog])
+        for removed_voice in (
+            "Fenrir",
+            "Laomedeia",
+            "Callirrhoe",
+        ):
+            self.assertNotIn(removed_voice, [voice["id"] for voice in catalog])
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.headers["content-type"], "audio/wav")
+        self.assertEqual(preview_response.content, b"preview-wave")
 
     def test_user_profile_can_be_updated_and_cleared(self) -> None:
         def override_get_db():
@@ -609,7 +781,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         provider_reply = get_llm_provider("mock").generate_reply(context)
         legacy_reply = generate_reply(self.character, context.current_user_message, context.recent_messages)
 
-        self.assertEqual(provider_reply, legacy_reply)
+        self.assertEqual(provider_reply.segments[0].text, legacy_reply)
 
     def test_prompt_builder_includes_key_context_fields(self) -> None:
         self.add_context_records()
@@ -687,6 +859,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Treat user_age as known only when it is explicitly set", prompt.system)
         self.assertIn("obey the correction", prompt.system)
         self.assertIn("Never describe the character in third person", prompt.system)
+        self.assertIn("Voice delivery is supported by the application backend", prompt.system)
+        self.assertIn("Never claim that you cannot send, record, generate, or use a voice message", prompt.system)
+        self.assertIn("the application will deliver the reply in the correct format", prompt.system)
+        self.assertIn("voice delivery is unavailable was a technical mistake", prompt.system)
         self.assertIn("Do not mechanically repeat", prompt.system)
         self.assertIn("Do not claim to browse the internet", prompt.system)
         self.assertIn("assume the character shares the user's city and timezone", prompt.system)
@@ -722,15 +898,19 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("A simple turn stays short even when personality emotionality", prompt.system)
         self.assertIn("do not write up to the 500-token ceiling", prompt.system)
         self.assertIn("Understand slang, smileys, typos", prompt.system)
+        self.assertIn("use the letter ё where the word or name requires it", prompt.system)
         self.assertIn("Do not lecture the user about slang or spelling", prompt.system)
+        self.assertIn("Structured reply contract (highest priority)", prompt.system)
+        self.assertIn("kind=speech contains only words", prompt.system)
+        self.assertIn("A physical action such as moving", prompt.system)
         self.assertIn("Roleplay communication protocol:", prompt.system)
         self.assertIn("detected_response_mode: plain_chat", prompt.system)
-        self.assertIn("Physical actions use *action*", prompt.system)
-        self.assertIn("private thoughts use ~thought~", prompt.system)
-        self.assertIn("Out-of-character notes use ((OOC: note))", prompt.system)
+        self.assertIn("actions as *action*", prompt.system)
+        self.assertIn("private thoughts as ~thought~", prompt.system)
+        self.assertIn("out-of-character notes as ((OOC: note))", prompt.system)
         self.assertIn("Never write, decide, or invent the user's speech", prompt.system)
         self.assertIn("It never changes presence_mode", prompt.system)
-        self.assertIn("reply only as ((OOC: ...))", prompt.system)
+        self.assertIn("return only kind=ooc segments", prompt.system)
         self.assertIn("Recent messages belong to the current scene context only", prompt.system)
         self.assertEqual([message.content for message in prompt.messages], ["hello", "hi", "current test message"])
 
@@ -1106,13 +1286,45 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
     def test_chat_flow_returns_mock_reply_through_provider_interface(self) -> None:
         with patch("app.services.orchestrator.get_llm_provider", return_value=get_llm_provider("mock")):
-            reply, assistant_message = handle_chat_message(self.db, self.character, "I am testing chat flow")
+            reply, assistant_message, reply_plan = handle_chat_message(
+                self.db,
+                self.character,
+                "I am testing chat flow",
+            )
 
         self.assertEqual(reply, assistant_message.content)
+        self.assertTrue(reply_plan.segments)
         self.assertTrue(reply)
         messages = self.db.query(Message).filter(Message.character_id == self.character.id).order_by(Message.created_at.asc()).all()
         self.assertEqual([message.role for message in messages], ["user", "assistant"])
         self.assertIn(self.character.state.mood, {"attentive", "curious", "warm", "concerned", "guarded"})
+
+    def test_incoming_voice_marks_generated_reply_as_voice_delivery(self) -> None:
+        captured = {}
+
+        class CapturingProvider:
+            def generate_reply(self, context):
+                captured["voice_reply_requested"] = context.voice_reply_requested
+                return "Я отвечаю голосом."
+
+        inbound = Message(
+            character_id=self.character.id,
+            role="user",
+            content="Рад тебя слышать",
+            message_type="voice",
+        )
+        self.db.add(inbound)
+        self.db.commit()
+
+        with patch("app.services.orchestrator.get_llm_provider", return_value=CapturingProvider()):
+            reply, _assistant_message, _reply_plan = handle_existing_user_message(
+                self.db,
+                self.character,
+                inbound,
+            )
+
+        self.assertEqual(reply, "Я отвечаю голосом.")
+        self.assertTrue(captured["voice_reply_requested"])
 
     def test_chat_flow_preserves_user_message_when_provider_fails(self) -> None:
         class FailingProvider:
@@ -1277,7 +1489,69 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIsNotNone(preserved_character.state)
         self.assertIsNotNone(preserved_character.scene)
 
+    def test_typed_voice_request_generates_audio_and_plain_text_does_not(self) -> None:
+        synthesized_texts: list[str] = []
+
+        class FakeTTSProvider:
+            def synthesize(self, provider_input, _voice_id):
+                synthesized_texts.append(provider_input)
+                return SynthesizedSpeech(audio_bytes=b"typed-wave-audio", mime_type="audio/wav")
+
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
+                ), patch(
+                    "app.services.voice_service.get_tts_provider",
+                    return_value=FakeTTSProvider(),
+                ):
+                    client = TestClient(app)
+                    voice_response = client.post(
+                        "/chat",
+                        json={
+                            "character_id": self.character.id,
+                            "message": "Ответьте голосовым",
+                        },
+                    )
+                    text_response = client.post(
+                        "/chat",
+                        json={
+                            "character_id": self.character.id,
+                            "message": "Как ты?",
+                        },
+                    )
+                    history = client.get(f"/chat/{self.character.id}").json()
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(voice_response.status_code, 200)
+        self.assertEqual(voice_response.json()["error_type"], "")
+        self.assertEqual(text_response.status_code, 200)
+        self.assertEqual(len(synthesized_texts), 1)
+        assistant_messages = [message for message in history if message["role"] == "assistant"]
+        self.assertEqual(
+            [message["message_type"] for message in assistant_messages],
+            ["voice", "text"],
+        )
+        self.assertTrue(assistant_messages[0]["audio_url"].endswith(".wav"))
+
     def test_voice_message_upload_is_stored_playable_and_removed_with_chat(self) -> None:
+        class FakeTTSProvider:
+            def synthesize(self, _provider_input, _voice_id):
+                return SynthesizedSpeech(audio_bytes=b"test-wave-audio", mime_type="audio/wav")
+
         def override_get_db():
             db: Session = self.SessionLocal()
             try:
@@ -1297,6 +1571,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
                 ), patch(
                     "app.services.orchestrator.get_llm_provider",
                     return_value=get_llm_provider("mock"),
+                ), patch(
+                    "app.services.voice_service.get_tts_provider",
+                    return_value=FakeTTSProvider(),
                 ):
                     client = TestClient(app)
                     upload_response = client.post(
@@ -1329,6 +1606,14 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     history_payload = history_response.json()
                     self.assertEqual([item["role"] for item in history_payload], ["user", "assistant"])
                     self.assertEqual(history_payload[0], voice_message)
+                    self.assertEqual(history_payload[1]["message_type"], "voice")
+                    self.assertEqual(history_payload[1]["audio_mime_type"], "audio/wav")
+                    self.assertEqual(history_payload[1]["content"], payload["reply"])
+                    assistant_audio_path = (
+                        Path(temporary_directory)
+                        / history_payload[1]["audio_url"].removeprefix("/voice-files/")
+                    )
+                    self.assertEqual(assistant_audio_path.read_bytes(), b"test-wave-audio")
                     self.db.expire_all()
                     context = build_orchestrator_context(
                         self.db,
@@ -1339,7 +1624,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                         [(item.role, item.content, item.message_type) for item in context.recent_messages],
                         [
                             ("user", "Как у тебя дела?", "voice"),
-                            ("assistant", payload["reply"], "text"),
+                            ("assistant", payload["reply"], "voice"),
                         ],
                     )
 
@@ -1347,6 +1632,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     self.assertEqual(clear_response.status_code, 200)
                     self.assertEqual(clear_response.json()["deleted_messages"], 2)
                     self.assertFalse(stored_file.exists())
+                    self.assertFalse(assistant_audio_path.exists())
         finally:
             app.dependency_overrides.clear()
 
@@ -1386,6 +1672,10 @@ class OrchestratorContextTestCase(unittest.TestCase):
         )
 
     def test_failed_voice_transcription_keeps_audio_and_can_be_retried(self) -> None:
+        class FakeTTSProvider:
+            def synthesize(self, _provider_input, _voice_id):
+                return SynthesizedSpeech(audio_bytes=b"retry-wave-audio", mime_type="audio/wav")
+
         def override_get_db():
             db: Session = self.SessionLocal()
             try:
@@ -1436,6 +1726,9 @@ class OrchestratorContextTestCase(unittest.TestCase):
                 ), patch(
                     "app.services.orchestrator.get_llm_provider",
                     return_value=get_llm_provider("mock"),
+                ), patch(
+                    "app.services.voice_service.get_tts_provider",
+                    return_value=FakeTTSProvider(),
                 ):
                     retry_response = client.post(
                         f"/voice/messages/{failed_message['id']}/retry"
@@ -1449,6 +1742,55 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertTrue(retry_payload["reply"])
         self.assertEqual(retry_payload["message"]["content"], "Теперь меня слышно")
         self.assertEqual(retry_payload["message"]["transcription_status"], "completed")
+
+    def test_voice_generation_failure_preserves_text_reply(self) -> None:
+        def override_get_db():
+            db: Session = self.SessionLocal()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TemporaryDirectory() as temporary_directory:
+                with patch(
+                    "app.services.voice_storage.VOICE_STORAGE_ROOT",
+                    Path(temporary_directory),
+                ), patch(
+                    "app.routers.voice.speech_to_text",
+                    return_value="Ответь голосом",
+                ), patch(
+                    "app.services.orchestrator.get_llm_provider",
+                    return_value=get_llm_provider("mock"),
+                ), patch(
+                    "app.services.voice_service.get_tts_provider",
+                ) as provider_factory:
+                    provider_factory.return_value.synthesize.side_effect = TTSProviderError("TTS unavailable")
+                    client = TestClient(app)
+                    response = client.post(
+                        f"/voice/messages/{self.character.id}",
+                        content=b"test-webm-audio",
+                        headers={
+                            "Content-Type": "audio/webm",
+                            "X-Audio-Duration-Ms": "1800",
+                        },
+                    )
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["error_type"], "voice_generation_error")
+        self.assertIn("Text reply was saved", payload["error_message"])
+        messages = self.db.scalars(
+            select(Message)
+            .where(Message.character_id == self.character.id)
+            .order_by(Message.created_at.asc())
+        ).all()
+        self.assertEqual([message.role for message in messages], ["user", "assistant"])
+        self.assertEqual(messages[1].message_type, "text")
+        self.assertEqual(messages[1].content, payload["reply"])
 
     def test_delete_character_removes_character_data_but_keeps_shared_user(self) -> None:
         self.add_context_records()

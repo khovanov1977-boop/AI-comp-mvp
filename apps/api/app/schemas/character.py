@@ -1,11 +1,12 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class CharacterCreate(BaseModel):
     name: str
-    gender: str = "unspecified"
+    gender: Literal["unspecified", "female", "male", "non_binary"] = "unspecified"
     relationship_mode: str = "companion"
     personality_description: str = ""
     communication_style: str = ""
@@ -16,6 +17,7 @@ class CharacterCreate(BaseModel):
     dislikes: str = ""
     language: str = "ru"
     user_nickname: str = ""
+    voice_id: str = ""
     user_city: str = ""
     user_country: str = ""
     user_timezone: str = "Europe/Moscow"
@@ -44,6 +46,7 @@ class CharacterRead(BaseModel):
     dislikes: str
     language: str
     user_nickname: str
+    voice_id: str
     user_city: str
     user_country: str
     user_timezone: str
@@ -58,9 +61,11 @@ class CharacterRead(BaseModel):
 
 
 class CharacterUpdate(BaseModel):
+    gender: Literal["unspecified", "female", "male", "non_binary"] | None = None
     relationship_mode: str | None = None
     personality_description: str | None = None
     communication_style: str | None = None
+    voice_id: str | None = None
     warmth: int | None = Field(default=None, ge=0, le=100)
     initiative: int | None = Field(default=None, ge=0, le=100)
     playfulness: int | None = Field(default=None, ge=0, le=100)

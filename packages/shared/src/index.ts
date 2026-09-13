@@ -12,6 +12,7 @@ export type Character = {
   dislikes: string;
   language: string;
   user_nickname: string;
+  voice_id: string;
   user_city: string;
   user_country: string;
   user_timezone: string;
@@ -23,6 +24,13 @@ export type Character = {
   emotionality: number;
   rationality: number;
   created_at: string;
+};
+
+export type VoiceOption = {
+  id: string;
+  gender: "female" | "male";
+  age_group: string;
+  description: string;
 };
 
 export type ChatMessage = {

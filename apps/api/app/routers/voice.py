@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,8 +7,10 @@ from app.models.message import Message
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
 from app.providers.stt_openrouter import STTConfigurationError, STTProviderError
 from app.schemas.chat import CharacterStateRead, VoiceChatResponse
+from app.schemas.voice import VoiceOptionRead, VoicePreviewRequest
 from app.services.orchestrator import handle_existing_user_message
-from app.services.voice_service import speech_to_text, text_to_speech
+from app.services.voice_catalog import catalog_payload
+from app.services.voice_service import attach_character_voice, speech_to_text, synthesize_voice_preview
 from app.services.voice_storage import (
     MAX_VOICE_DURATION_MS,
     VoiceFileTooLargeError,
@@ -18,12 +19,9 @@ from app.services.voice_storage import (
     read_voice_file,
     save_voice_file,
 )
+from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
 
 router = APIRouter(prefix="/voice", tags=["voice"])
-
-
-class TtsRequest(BaseModel):
-    text: str
 
 
 def parse_audio_duration(value: str | None) -> int | None:
@@ -90,7 +88,7 @@ def process_voice_message(db: Session, character: Character, message: Message) -
     db.refresh(message)
 
     try:
-        reply, _assistant_message = handle_existing_user_message(db, character, message)
+        reply, assistant_message, reply_plan = handle_existing_user_message(db, character, message)
     except LLMConfigurationError as exc:
         db.rollback()
         return voice_chat_response(
@@ -114,6 +112,31 @@ def process_voice_message(db: Session, character: Character, message: Message) -
             character,
             error_type="chat_error",
             error_message=str(exc) or exc.__class__.__name__,
+        )
+
+    try:
+        attach_character_voice(character, assistant_message, reply_plan)
+        db.add(assistant_message)
+        db.commit()
+    except (TTSConfigurationError, TTSProviderError, VoiceStorageError) as exc:
+        db.rollback()
+        db.refresh(message)
+        return voice_chat_response(
+            message,
+            character,
+            reply=reply,
+            error_type="voice_generation_error",
+            error_message=f"Text reply was saved, but voice generation failed: {exc}",
+        )
+    except Exception as exc:
+        db.rollback()
+        db.refresh(message)
+        return voice_chat_response(
+            message,
+            character,
+            reply=reply,
+            error_type="voice_generation_error",
+            error_message=f"Text reply was saved, but voice generation failed: {str(exc) or exc.__class__.__name__}",
         )
 
     db.refresh(message)
@@ -178,6 +201,17 @@ def retry_voice_transcription(message_id: str, db: Session = Depends(get_db)) ->
     return process_voice_message(db, character, message)
 
 
-@router.post("/tts")
-def tts(payload: TtsRequest) -> dict[str, str]:
-    return {"audio_url": text_to_speech(payload.text)}
+@router.get("/catalog", response_model=list[VoiceOptionRead])
+def voice_catalog() -> list[dict[str, str]]:
+    return catalog_payload()
+
+
+@router.post("/preview")
+def preview_voice(payload: VoicePreviewRequest) -> Response:
+    try:
+        speech = synthesize_voice_preview(payload.voice_id)
+    except TTSConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TTSProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return Response(content=speech.audio_bytes, media_type=speech.mime_type)

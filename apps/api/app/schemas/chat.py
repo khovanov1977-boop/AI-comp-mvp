@@ -26,6 +26,8 @@ class ChatRetryRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     character_state: CharacterStateRead
+    error_type: str = ""
+    error_message: str = ""
 
 
 class MessageRead(BaseModel):

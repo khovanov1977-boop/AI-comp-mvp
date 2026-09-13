@@ -16,6 +16,7 @@ import {
   updateUserProfile,
 } from "../lib/api";
 import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
+import { VoiceSelector } from "./VoiceSelector";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
   { value: "user_fact", label: "User facts" },
@@ -41,17 +42,21 @@ const RELATIONSHIP_MODES = [
 
 type CharacterSettingsDraft = Pick<
   Character,
+  | "gender"
   | "relationship_mode"
   | "personality_description"
   | "communication_style"
+  | "voice_id"
   | PersonalityTraitKey
 >;
 
 function getCharacterSettingsDraft(character: Character): CharacterSettingsDraft {
   return {
+    gender: character.gender,
     relationship_mode: character.relationship_mode,
     personality_description: character.personality_description,
     communication_style: character.communication_style,
+    voice_id: character.voice_id,
     warmth: character.warmth,
     initiative: character.initiative,
     playfulness: character.playfulness,
@@ -446,6 +451,20 @@ export function CompanionPanel({
             These are base personality settings. Mood, trust, closeness, and energy continue to evolve during chat.
           </p>
           <label className="field">
+            <span className="label">Gender</span>
+            <select
+              className="select"
+              value={characterDraft.gender}
+              disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("gender", event.target.value)}
+            >
+              <option value="unspecified">Unspecified</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="non_binary">Non-binary</option>
+            </select>
+          </label>
+          <label className="field">
             <span className="label">Relationship mode</span>
             <select
               className="select"
@@ -479,6 +498,16 @@ export function CompanionPanel({
               onChange={(event) => updateCharacterDraft("communication_style", event.target.value)}
             />
           </label>
+          <div className="field">
+            <span className="label">Voice</span>
+            <VoiceSelector
+              gender={characterDraft.gender}
+              value={characterDraft.voice_id}
+              disabled={isSavingCharacter}
+              onChange={(voiceId) => updateCharacterDraft("voice_id", voiceId)}
+            />
+            <small className="muted">Used when the character answers an incoming voice message.</small>
+          </div>
           <div className="settings-subheading">
             <strong>Personality equalizer</strong>
             <small>50 is balanced.</small>

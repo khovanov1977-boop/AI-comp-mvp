@@ -123,6 +123,7 @@ class OrchestratorContext(BaseModel):
     memory: dict[str, list[OrchestratorMemoryItem]]
     recent_messages: list[OrchestratorMessageContext]
     current_user_message: str
+    voice_reply_requested: bool = False
 
 
 class OrchestratorContextDebugRequest(BaseModel):

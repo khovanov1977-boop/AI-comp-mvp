@@ -12,6 +12,7 @@ from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdat
 from app.services.scene_service import DEFAULT_SCENE
 from app.services.time_context import infer_timezone
 from app.services.voice_storage import delete_character_voice_files
+from app.services.voice_catalog import is_supported_voice, is_voice_compatible
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 
@@ -46,6 +47,7 @@ def to_character_read(character: Character) -> CharacterRead:
         dislikes=profile.dislikes if profile else "",
         language=profile.language if profile else "ru",
         user_nickname=profile.user_nickname if profile else "",
+        voice_id=profile.voice_id if profile and is_supported_voice(profile.voice_id) else "",
         user_city=user.city if user else "",
         user_country=user.country if user else "",
         user_timezone=user.timezone if user else "Europe/Moscow",
@@ -62,6 +64,10 @@ def to_character_read(character: Character) -> CharacterRead:
 
 @router.post("", response_model=CharacterRead)
 def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) -> CharacterRead:
+    if payload.voice_id and not is_supported_voice(payload.voice_id):
+        raise HTTPException(status_code=422, detail="Unsupported character voice")
+    if payload.voice_id and not is_voice_compatible(payload.voice_id, payload.gender):
+        raise HTTPException(status_code=422, detail="Voice does not match character gender")
     user = get_or_create_demo_user(db)
     user.city = payload.user_city.strip()
     user.country = payload.user_country.strip()
@@ -83,6 +89,7 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         dislikes=payload.dislikes,
         language=payload.language,
         user_nickname=payload.user_nickname,
+        voice_id=payload.voice_id,
         warmth=payload.warmth,
         initiative=payload.initiative,
         playfulness=payload.playfulness,
@@ -136,6 +143,9 @@ def update_character(
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
+    if payload.gender is not None:
+        character.gender = payload.gender
+
     if payload.relationship_mode is not None:
         character.relationship_mode = payload.relationship_mode
 
@@ -148,6 +158,14 @@ def update_character(
         profile.personality_description = payload.personality_description
     if payload.communication_style is not None:
         profile.communication_style = payload.communication_style
+    if payload.voice_id is not None:
+        if payload.voice_id and not is_supported_voice(payload.voice_id):
+            raise HTTPException(status_code=422, detail="Unsupported character voice")
+        if payload.voice_id and not is_voice_compatible(payload.voice_id, character.gender):
+            raise HTTPException(status_code=422, detail="Voice does not match character gender")
+        profile.voice_id = payload.voice_id
+    elif payload.gender is not None and profile.voice_id and not is_voice_compatible(profile.voice_id, character.gender):
+        profile.voice_id = ""
     for trait_name in ("warmth", "initiative", "playfulness", "directness", "emotionality", "rationality"):
         trait_value = getattr(payload, trait_name)
         if trait_value is not None:

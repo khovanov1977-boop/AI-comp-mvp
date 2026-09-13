@@ -190,13 +190,20 @@ Focus:
 
 ## Sprint 3.2: Character Voice Generation
 
-Status: planned.
+Status: implemented and verified locally.
 
 Focus:
 - Add a provider-independent text-to-speech interface.
 - Generate audio from the character's normal text response.
 - Preserve the text reply when voice generation fails.
 - Support a stable voice selection for each character.
+- Start with a curated temporary Gemini catalog: 12 female and 9 male Russian-tested voices.
+- Generate a character voice reply after an incoming voice message.
+- Generate a voice reply when a typed message explicitly asks the character to speak or send audio.
+- Generate one structured LLM reply that separates speech, actions, thoughts, scene notes, OOC content, audible cues, and overall delivery.
+- Render visible chat text and the TTS transcript from that shared structure so physical narration cannot be spoken accidentally.
+- Map audible cues and delivery to Gemini's documented Audio Profile, Scene, Director's Notes, Transcript, and English audio-tag format; normalize known Russian name forms for `ё` pronunciation.
+- Let users preview and change a voice during character creation or later in character settings.
 
 ## Sprint 3.3: Voice UX + Reliability
 
@@ -217,10 +224,12 @@ Focus:
 - Tool orchestration for restaurants, movies, events, and live information.
 - Character must not pretend to verify live information unless a web tool was actually used.
 
-## Backlog: Voice Emotion Controls
+## Backlog: Alternative TTS Provider Evaluation
 
 Status: deferred.
 
 Focus:
-- Adjust future voice response tone and volume based on character emotional state.
-- Requires a real or richer voice provider before implementation.
+- Revisit the voice source because the temporary Gemini voices sound too similar and do not cover all desired ages.
+- Compare providers with a larger catalog of clearly differentiated native-Russian voices.
+- Target at least 10 female and 10 male voices, including under-25 and multiple 40+ options.
+- Introduce internal voice aliases before replacing the provider so existing selections can be migrated.

@@ -135,6 +135,10 @@ export function ChatWindow({
     try {
       const response = await sendChatMessage(characterId, text);
       await finishSuccessfulReply(response.reply);
+      if (response.error_message) {
+        setError(response.error_message);
+        setCanRetry(response.error_type.startsWith("llm_") || response.error_type === "chat_error");
+      }
     } catch (caughtError) {
       await handleSendFailure(caughtError);
     } finally {
@@ -149,6 +153,10 @@ export function ChatWindow({
     try {
       const response = await retryChatMessage(characterId);
       await finishSuccessfulReply(response.reply);
+      if (response.error_message) {
+        setError(response.error_message);
+        setCanRetry(response.error_type.startsWith("llm_") || response.error_type === "chat_error");
+      }
     } catch (caughtError) {
       await handleSendFailure(caughtError);
     } finally {

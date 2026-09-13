@@ -28,6 +28,7 @@ from app.services.time_context import (
     get_local_datetime,
     infer_timezone,
 )
+from app.services.voice_intent import should_generate_voice_reply
 from app.services.world_state import build_world_state
 
 
@@ -41,6 +42,7 @@ def build_orchestrator_context(
     character: Character,
     current_user_message: str,
     recent_message_limit: int = RECENT_MESSAGE_LIMIT,
+    voice_reply_requested: bool | None = None,
 ) -> OrchestratorContext:
     profile = character.profile
     state = character.state
@@ -187,4 +189,9 @@ def build_orchestrator_context(
             for message in recent_messages
         ],
         current_user_message=current_user_message,
+        voice_reply_requested=(
+            should_generate_voice_reply(current_user_message)
+            if voice_reply_requested is None
+            else voice_reply_requested
+        ),
     )

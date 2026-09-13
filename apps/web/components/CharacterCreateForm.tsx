@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { createCharacter, type CharacterCreateInput } from "../lib/api";
 import { PersonalityEqualizer } from "./PersonalityEqualizer";
+import { VoiceSelector } from "./VoiceSelector";
 
 const initialForm: CharacterCreateInput = {
   name: "",
@@ -21,6 +22,7 @@ const initialForm: CharacterCreateInput = {
   user_country: "",
   user_timezone: "",
   user_language: "ru",
+  voice_id: "",
   warmth: 50,
   initiative: 50,
   playfulness: 50,
@@ -73,6 +75,16 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           <option value="non_binary">Non-binary</option>
         </select>
       </label>
+      <div className="field">
+        <span className="label">Voice</span>
+        <VoiceSelector
+          gender={form.gender}
+          value={form.voice_id}
+          required
+          onChange={(voiceId) => update("voice_id", voiceId)}
+        />
+        <small className="muted">Temporary Gemini catalog. The voice can be changed later.</small>
+      </div>
       <label className="field">
         <span className="label">Relationship mode</span>
         <select

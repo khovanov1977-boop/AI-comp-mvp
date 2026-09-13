@@ -12,10 +12,14 @@ INLINE_CONTROL_PATTERN = re.compile(
 )
 
 
-def sanitize_assistant_reply(reply: str) -> str:
+def clean_assistant_text(reply: str) -> str:
     cleaned = INLINE_CONTROL_PATTERN.sub("", reply)
     cleaned = TOOL_TAG_PATTERN.sub("", cleaned)
     lines = [line.rstrip() for line in cleaned.splitlines() if line.strip() and not CONTROL_LINE_PATTERN.match(line)]
     cleaned = "\n".join(lines).strip()
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    return cleaned or "Я рядом. Давай продолжим."
+    return cleaned
+
+
+def sanitize_assistant_reply(reply: str) -> str:
+    return clean_assistant_text(reply) or "Я рядом. Давай продолжим."
