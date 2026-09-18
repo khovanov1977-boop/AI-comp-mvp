@@ -26,7 +26,7 @@ class OpenAICompatibleLLMProvider:
         api_key: str,
         model: str,
         timeout_seconds: int = 60,
-        temperature: float = 0.8,
+        temperature: float = 0.3,
         max_tokens: int = 500,
         client: httpx.Client | None = None,
     ) -> None:

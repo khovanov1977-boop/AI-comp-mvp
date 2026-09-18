@@ -207,13 +207,26 @@ Focus:
 
 ## Sprint 3.3: Voice UX + Reliability
 
-Status: implemented and verified locally; awaiting review and commit.
+Status: completed and pushed.
 
 Focus:
 - Add clear recording, uploading, transcribing, and generation states.
 - Add retry behavior and format compatibility checks.
 - Finalize duration and file-size limits.
 - Improve mobile recording controls.
+
+## Sprint 3.4: LLM Migration + Release Baseline
+
+Status: completed and pushed.
+
+Focus:
+- Adopt Mistral Small 4 through the existing OpenRouter-compatible integration as the recommended hosted LLM baseline.
+- Use temperature `0.3` as the default for more controlled, less overly romantic replies.
+- Keep structured character replies under the existing strict JSON schema.
+- Diagnose invalid JSON and schema-validation failures with provider and finish-reason metadata when available.
+- Retry a malformed structured reply once without retrying HTTP, network, or timeout failures.
+- Record the current model-selection findings and known TTS reliability limitation.
+- Keep alternative TTS evaluation and web tools deferred.
 
 ## Backlog: Web Tools / Internet Access
 

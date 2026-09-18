@@ -1,6 +1,6 @@
 # AI Companion MVP
 
-Sprint 0 skeleton for an AI Companion web app.
+An AI Companion web app with persistent characters, structured roleplay, memory, emotional state, and text and voice conversations.
 
 ## Stack
 
@@ -8,9 +8,9 @@ Sprint 0 skeleton for an AI Companion web app.
 - Backend: FastAPI
 - Database: PostgreSQL
 - ORM: SQLAlchemy
-- AI providers: local mock providers only
+- AI providers: mock or OpenAI-compatible LLM, OpenRouter STT, and OpenRouter TTS
 
-## What Works In Sprint 0
+## Current MVP Capabilities
 
 - Create a character
 - See character cards
@@ -18,11 +18,12 @@ Sprint 0 skeleton for an AI Companion web app.
 - Send a text message
 - Record, store, and play user voice messages
 - Transcribe user voice messages through OpenRouter and send them to the character
-- Get a mock AI response
+- Get a structured character response from a mock or configured real LLM
+- Generate character voice replies and retry failed transcription or voice generation
 - Store user and assistant messages in PostgreSQL
 - Load chat history in the frontend
 
-Real LLM, image, video, voice, auth, payments, realtime voice, live avatar, and LoRA are intentionally not included yet.
+Auth, payments, realtime voice, live avatar, and LoRA are not included yet.
 
 ## Project Structure
 
@@ -59,6 +60,19 @@ Copy-Item .env.example .env
 ```
 
 Skip this command if `.env` already exists.
+
+For the currently recommended hosted LLM baseline, set:
+
+```env
+LLM_PROVIDER=openai_compatible
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=your_openrouter_key
+LLM_MODEL=mistralai/mistral-small-2603
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+When `STT_BASE_URL`, `STT_API_KEY`, `TTS_BASE_URL`, and `TTS_API_KEY` are empty, the speech providers reuse the OpenRouter URL and API key above.
 
 ### 2. Start PostgreSQL
 
@@ -134,18 +148,18 @@ http://localhost:3001
 
 Use the URL shown in the frontend PowerShell output.
 
-### 6. Test Sprint 0 Flow
+### 6. Test The Basic Flow
 
 1. Open the frontend URL, usually `http://localhost:3000`.
 2. Open `Characters`.
 3. Create a character.
 4. Open the character chat.
 5. Send a message.
-6. Confirm that a mock AI response appears.
+6. Confirm that a character response appears.
 7. Refresh the chat page.
 8. Confirm that message history is still visible.
 
-Sprint 0 uses mock providers only. Real AI APIs are intentionally not connected.
+The default example configuration uses the mock LLM. Configure the hosted baseline above to test the real LLM and speech providers.
 
 ## Troubleshooting
 
@@ -219,4 +233,4 @@ docker compose ps db
 ## Notes
 
 The backend creates tables automatically on startup for Sprint 0 convenience. A production setup should replace this with migrations.
-Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription uses the configured OpenRouter credentials. Character voice generation is not connected yet.
+Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription and character voice generation use the configured OpenRouter credentials.

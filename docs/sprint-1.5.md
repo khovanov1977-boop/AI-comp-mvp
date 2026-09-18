@@ -28,7 +28,7 @@ Local Ollama / OpenAI-compatible example:
 ```env
 LLM_PROVIDER=openai_compatible
 LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=huihui_ai/gemma-4-abliterated:12b
+LLM_MODEL=your_local_model
 LLM_API_KEY=ollama
 ```
 
@@ -37,10 +37,10 @@ Cloud GPU endpoint example:
 ```env
 LLM_PROVIDER=openai_compatible
 LLM_BASE_URL=https://your-endpoint.example.com/v1
-LLM_MODEL=huihui_ai/gemma-4-abliterated:12b
+LLM_MODEL=your_cloud_model
 LLM_API_KEY=your_key
 ```
 
-The target model for a later manual test is `huihui_ai/gemma-4-abliterated:12b`.
+The currently selected hosted baseline is documented in Sprint 3.4. These examples remain provider-neutral because the integration is not tied to one model.
 
 Real model runtime setup, GPU hosting, Ollama installation, and model download are outside Sprint 1.5.

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
     llm_timeout_seconds: int = 60
-    llm_temperature: float = 0.8
+    llm_temperature: float = 0.3
     llm_max_tokens: int = 500
     stt_provider: str = "openrouter"
     stt_base_url: str = ""

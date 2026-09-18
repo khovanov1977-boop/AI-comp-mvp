@@ -1,6 +1,6 @@
 # Sprint 3.3: Voice UX + Reliability
 
-Status: implemented and verified locally; awaiting review and commit.
+Status: completed and pushed.
 
 ## Goal
 
@@ -46,5 +46,5 @@ The browser chooses a MediaRecorder format only when both the browser and backen
 
 ## Verification
 
-- Backend: 74 tests pass, including phased processing, upload idempotency, published constraints, and manual TTS recovery without a second LLM call.
+- At Sprint 3.3 completion, 74 backend tests passed, including phased processing, upload idempotency, published constraints, and manual TTS recovery without a second LLM call.
 - Frontend: Next.js production build passes with TypeScript validation.
