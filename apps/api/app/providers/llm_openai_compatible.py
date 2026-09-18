@@ -61,32 +61,53 @@ class OpenAICompatibleLLMProvider:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        try:
-            response = self._post_chat_completions(payload, headers)
-        except httpx.TimeoutException as exc:
-            raise LLMProviderError("LLM provider request timed out") from exc
-        except httpx.HTTPError as exc:
-            raise LLMProviderError("LLM provider request failed") from exc
+        for attempt in range(2):
+            try:
+                response = self._post_chat_completions(payload, headers)
+            except httpx.TimeoutException as exc:
+                raise LLMProviderError("LLM provider request timed out") from exc
+            except httpx.HTTPError as exc:
+                raise LLMProviderError("LLM provider request failed") from exc
 
-        if response.status_code != 200:
-            detail = response.text.strip().replace("\n", " ")[:500]
-            message = f"LLM provider returned HTTP {response.status_code}"
-            if detail:
-                message = f"{message}: {detail}"
-            raise LLMProviderError(message)
+            if response.status_code != 200:
+                detail = response.text.strip().replace("\n", " ")[:500]
+                message = f"LLM provider returned HTTP {response.status_code}"
+                if detail:
+                    message = f"{message}: {detail}"
+                raise LLMProviderError(message)
 
-        try:
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise LLMProviderError("LLM provider returned malformed response") from exc
+            try:
+                data = response.json()
+                choice = data["choices"][0]
+                content = choice["message"]["content"]
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise LLMProviderError("LLM provider returned malformed response") from exc
 
-        if not isinstance(content, str) or not content.strip():
-            raise LLMProviderError("LLM provider returned empty response")
-        try:
-            return CharacterReply.model_validate(json.loads(content))
-        except (json.JSONDecodeError, ValidationError) as exc:
-            raise LLMProviderError("LLM provider returned malformed structured reply") from exc
+            if not isinstance(content, str) or not content.strip():
+                raise LLMProviderError("LLM provider returned empty response")
+
+            response_context = self._format_response_context(data, choice)
+            try:
+                parsed_content = json.loads(content)
+            except json.JSONDecodeError as exc:
+                if attempt == 0:
+                    continue
+                raise LLMProviderError(
+                    "LLM provider returned malformed structured reply after one retry: "
+                    f"invalid JSON at line {exc.lineno}, column {exc.colno}{response_context}"
+                ) from exc
+
+            try:
+                return CharacterReply.model_validate(parsed_content)
+            except ValidationError as exc:
+                if attempt == 0:
+                    continue
+                raise LLMProviderError(
+                    "LLM provider returned malformed structured reply after one retry: "
+                    f"schema validation failed ({self._format_validation_errors(exc)}){response_context}"
+                ) from exc
+
+        raise LLMProviderError("LLM provider returned malformed structured reply after one retry")
 
     def _validate_config(self) -> None:
         if not self.base_url:
@@ -100,6 +121,33 @@ class OpenAICompatibleLLMProvider:
             return self.client.post(url, json=payload, headers=headers, timeout=self.timeout_seconds)
         with httpx.Client(timeout=self.timeout_seconds) as client:
             return client.post(url, json=payload, headers=headers)
+
+    @staticmethod
+    def _format_response_context(data: dict[str, Any], choice: dict[str, Any]) -> str:
+        details = []
+        provider = data.get("provider")
+        if isinstance(provider, str) and provider.strip():
+            details.append(f"provider={provider.strip()}")
+
+        finish_reason = choice.get("finish_reason")
+        if isinstance(finish_reason, str) and finish_reason.strip():
+            details.append(f"finish_reason={finish_reason.strip()}")
+
+        return f" [{', '.join(details)}]" if details else ""
+
+    @staticmethod
+    def _format_validation_errors(exc: ValidationError) -> str:
+        errors = exc.errors()
+        summaries = []
+        for error in errors[:3]:
+            location = ".".join(str(part) for part in error.get("loc", ())) or "reply"
+            error_type = str(error.get("type", "validation_error"))
+            summaries.append(f"{location}: {error_type}")
+
+        if len(errors) > len(summaries):
+            summaries.append(f"and {len(errors) - len(summaries)} more")
+
+        return "; ".join(summaries) or "unknown validation error"
 
     @staticmethod
     def _to_openai_messages(messages: list[ProviderMessage], system_prompt: str) -> list[dict[str, str]]:

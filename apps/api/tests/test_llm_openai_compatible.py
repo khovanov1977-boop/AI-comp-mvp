@@ -254,15 +254,23 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
             provider.generate_reply(make_context())
 
     def test_non_200_response_raises_clear_provider_error(self) -> None:
+        attempts = 0
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(500, json={"error": "bad"})
+
         provider = OpenAICompatibleLLMProvider(
             base_url="http://localhost:11434/v1",
             api_key="",
             model="test-model",
-            client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500, json={"error": "bad"}))),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
         )
 
         with self.assertRaisesRegex(LLMProviderError, "HTTP 500"):
             provider.generate_reply(make_context())
+        self.assertEqual(attempts, 1)
 
     def test_malformed_response_raises_clear_provider_error(self) -> None:
         provider = OpenAICompatibleLLMProvider(
@@ -292,6 +300,140 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
 
         with self.assertRaisesRegex(LLMProviderError, "malformed structured reply"):
             provider.generate_reply(make_context())
+
+    def test_invalid_structured_reply_is_retried_once(self) -> None:
+        attempts = 0
+        valid_reply = {
+            "segments": [
+                {
+                    "kind": "speech",
+                    "text": "Recovered reply",
+                    "audio_cue": "none",
+                }
+            ],
+            "delivery": {
+                "emotion": "neutral",
+                "pace": "natural",
+                "intensity": "balanced",
+            },
+        }
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "provider": "Venice",
+                        "choices": [
+                            {
+                                "finish_reason": "length",
+                                "message": {"content": "{"},
+                            }
+                        ],
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "provider": "Mistral",
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {"content": json.dumps(valid_reply)},
+                        }
+                    ],
+                },
+            )
+
+        provider = OpenAICompatibleLLMProvider(
+            base_url="http://localhost:11434/v1",
+            api_key="",
+            model="test-model",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        reply = provider.generate_reply(make_context())
+
+        self.assertEqual(attempts, 2)
+        self.assertEqual(reply.segments[0].text, "Recovered reply")
+
+    def test_invalid_json_reports_location_and_provider_context(self) -> None:
+        provider = OpenAICompatibleLLMProvider(
+            base_url="http://localhost:11434/v1",
+            api_key="",
+            model="test-model",
+            client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(
+                        200,
+                        json={
+                            "provider": "ExampleProvider",
+                            "choices": [
+                                {
+                                    "finish_reason": "stop",
+                                    "message": {"content": "not json"},
+                                }
+                            ],
+                        },
+                    )
+                )
+            ),
+        )
+
+        with self.assertRaises(LLMProviderError) as raised:
+            provider.generate_reply(make_context())
+
+        message = str(raised.exception)
+        self.assertIn("invalid JSON at line 1, column 1", message)
+        self.assertIn("provider=ExampleProvider", message)
+        self.assertIn("finish_reason=stop", message)
+
+    def test_schema_validation_error_reports_only_field_path_and_type(self) -> None:
+        invalid_reply = {
+            "segments": [
+                {
+                    "kind": "speech",
+                    "text": "Private reply text",
+                    "audio_cue": "unexpected-cue",
+                }
+            ],
+            "delivery": {
+                "emotion": "neutral",
+                "pace": "natural",
+                "intensity": "balanced",
+            },
+        }
+        provider = OpenAICompatibleLLMProvider(
+            base_url="http://localhost:11434/v1",
+            api_key="",
+            model="test-model",
+            client=httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(
+                        200,
+                        json={
+                            "provider": "ExampleProvider",
+                            "choices": [
+                                {
+                                    "finish_reason": "stop",
+                                    "message": {"content": json.dumps(invalid_reply)},
+                                }
+                            ],
+                        },
+                    )
+                )
+            ),
+        )
+
+        with self.assertRaises(LLMProviderError) as raised:
+            provider.generate_reply(make_context())
+
+        message = str(raised.exception)
+        self.assertIn("schema validation failed", message)
+        self.assertIn("segments.0.audio_cue: literal_error", message)
+        self.assertNotIn("Private reply text", message)
 
     def test_timeout_raises_clear_provider_error(self) -> None:
         def handler(_request: httpx.Request) -> httpx.Response:
