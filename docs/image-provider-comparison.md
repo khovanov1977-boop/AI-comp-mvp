@@ -221,3 +221,29 @@ Sources for the passthrough test:
   https://openrouter.ai/docs/guides/overview/multimodal/image-generation
 - Black Forest Labs moderation sensitivity and FLUX.2 range:
   https://docs.bfl.ml/api_integration/errors
+
+### Confirmed retry round (2026-09-22)
+
+Every failed or unknown item from the first matrix was submitted once more with
+the same prompt and inputs. The previously interrupted FLUX adult request with
+`safety_tolerance=5` was also submitted once more. Successful first-round items
+were not repeated.
+
+| Retried item | Second outcome |
+| --- | --- |
+| FLUX.2 Pro portrait | HTTP 400 again |
+| FLUX.2 Pro explicit adult, default tolerance | HTTP 400 again |
+| FLUX.2 Pro explicit adult, `safety_tolerance=5` | HTTP 400 |
+| Seedream 5.0 Pro explicit adult | HTTP 400 again |
+| Qwen Image 3 Pro dialogue scene with 3 references | HTTP 524 again |
+| Qwen Image 3 Pro explicit adult with 3 references | HTTP 524 again |
+| Grok Imagine Image 2.0 explicit adult | HTTP 400 again |
+| Gemini 3.1 Flash Image explicit adult | HTTP 400 again |
+
+OpenRouter reported no cost for any retry, and no new image was returned. The
+repeated results strengthen two conclusions: the adult prompt is consistently
+rejected by FLUX, Seedream, Grok, and Gemini through these endpoints, including
+FLUX at its least strict documented setting; and Qwen Image 3 Pro is not reliable
+enough for the three-reference application flow in this configuration. HTTP 400
+is still recorded as rejection rather than a raw moderation reason because the
+adapter intentionally does not retain provider error bodies.
