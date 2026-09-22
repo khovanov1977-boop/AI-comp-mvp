@@ -50,11 +50,20 @@ class OpenRouterImageProvider:
         self.timeout = config.image_timeout_seconds
         self.client = client
 
-    def generate(self, *, model: str, prompt: str, references: list[bytes]) -> GeneratedImage:
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        references: list[bytes],
+        provider_options: dict[str, dict] | None = None,
+    ) -> GeneratedImage:
         payload = {
             "model": model, "prompt": prompt, "n": 1, "size": "1024x1024",
             "output_format": "png", "provider": {"allow_fallbacks": False},
         }
+        if provider_options:
+            payload["provider"]["options"] = provider_options
         if references:
             payload["input_references"] = [
                 {"type": "image_url", "image_url": {

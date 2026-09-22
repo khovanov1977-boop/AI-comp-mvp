@@ -45,6 +45,26 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertEqual(result.cost_usd, Decimal("0.075"))
         self.assertEqual(len(calls), 1)
 
+    def test_provider_specific_options_are_nested_under_provider(self):
+        def handler(request):
+            body = json.loads(request.content)
+            self.assertEqual(
+                body["provider"]["options"],
+                {"black-forest-labs": {"safety_tolerance": 5}},
+            )
+            return httpx.Response(
+                200,
+                json={"data": [{"b64_json": base64.b64encode(self.png).decode()}]},
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            OpenRouterImageProvider(self.config, client).generate(
+                model=self.config.image_model,
+                prompt="p",
+                references=[],
+                provider_options={"black-forest-labs": {"safety_tolerance": 5}},
+            )
+
     def test_no_retries_or_raw_error_leaks(self):
         for status in (400, 401, 402, 403, 404, 429, 500, 502):
             calls = []

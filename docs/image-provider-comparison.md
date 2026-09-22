@@ -1,8 +1,9 @@
 # Image model research: HiDream, Hugging Face, and fal.ai
 
-Checked: 2026-09-18. Documentation research only; no paid calls or provider setup.
-This extends the earlier OpenRouter comparison. It does not select a winner or
-establish that any candidate satisfies every product requirement.
+Research started: 2026-09-18. Live OpenRouter comparison completed: 2026-09-22.
+This extends the earlier OpenRouter comparison. The first paid benchmark narrows
+the candidates but does not establish that any model satisfies every product
+requirement.
 
 Implementation update, 2026-09-21: OpenRouter with
 `black-forest-labs/flux.2-pro` is now the first integration target, not a benchmark
@@ -126,3 +127,97 @@ test budget still need agreement before paid use.
 Future video candidates are persisted in [the roadmap](roadmap.md): Wan, LTX,
 HunyuanVideo, and fal.ai, plus an explicit requirement to find more alternatives
 when that block begins. No video benchmark or provider selection is performed here.
+
+## Live OpenRouter benchmark shortlist (2026-09-22)
+
+The dedicated Image Models API was queried immediately before preparing the
+benchmark. These are live endpoint capabilities, not measured quality results.
+
+| Model | Maximum references | 1K/base output price | Input-reference price | First-round role |
+| --- | ---: | ---: | ---: | --- |
+| `black-forest-labs/flux.2-pro` | 8 | $0.03/MP | Endpoint record omits it; previous observed billing increased with references | Existing baseline |
+| `bytedance-seed/seedream-5-0-pro` | 14 | $0.045/image | $0.003/image | Broad multi-reference candidate |
+| `qwen/qwen-image-3-pro` | 4 | $0.04/image | $0.003/image | Low-cost candidate; supports up to six outputs per call |
+| `x-ai/grok-imagine-image-2.0` | 3 | $0.06/image at medium 1K | $0.01/image | Exact three-reference candidate and policy comparison |
+| `google/gemini-3.1-flash-image` | 14 | $0.00006/output token | Not separately listed | Context/quality control; stricter moderation remains a likely product limitation |
+
+All five accept image input and the normalized `input_references` parameter.
+The paid first-round plan compares the same text-only portrait, the same
+three-reference chat scene («Я сижу на диване в халате»), and the same explicit
+adult-only prompt for every model. The adult prompt states that the subject is a
+fictional consenting woman aged 25+, and excludes minors, youthful traits, real
+people, coercion, violence, and additional participants. A strict profile can be
+added later. Adult-content compatibility is not inferred from an API parameter:
+OpenRouter terms leave applicable provider terms in force, so a refusal or content
+filter is recorded as a benchmark result and is never automatically retried.
+
+The manual runner is `apps/api/tests/manual_model_benchmark.py`. It is isolated
+from the application database, writes claim files before every request, never
+retries, and requires `--execute`, a confirmation phrase, a stable run id, and a
+conservative budget reservation. Merely running it without `--execute` is free.
+
+## Paid OpenRouter benchmark results (2026-09-22)
+
+The approved run sent exactly 15 requests: one text-only portrait, one
+three-reference dialogue scene, and one three-reference explicit adult scene to
+each model. There were no retries. OpenRouter reported $0.497239 total for the
+successful responses. Failed or unknown responses contained no reported cost;
+that is not proof that the provider will never bill an unknown-outcome request.
+
+| Model | Portrait | Dialogue scene with 3 references | Explicit adult scene | Reported successful cost |
+| --- | --- | --- | --- | ---: |
+| FLUX.2 Pro | HTTP 400 | Completed | HTTP 400 | $0.075 |
+| Seedream 5.0 Pro | Completed | Completed | HTTP 400 | $0.096 |
+| Qwen Image 3 Pro | Completed | HTTP 524 / unknown | HTTP 524 / unknown | $0.040 |
+| Grok Imagine Image 2.0 | Completed | Completed | HTTP 400 | $0.150 |
+| Gemini 3.1 Flash Image | Completed | Completed | HTTP 400 | $0.136239 |
+
+`HTTP 400` is recorded as rejection, not as a definitive provider policy label,
+because the application adapter deliberately does not persist raw upstream error
+messages. For FLUX, Seedream, Grok, and Gemini the same request shape and the same
+three references worked for the ordinary dialogue scene, while the adult prompt
+was rejected. That strongly indicates content moderation rather than a malformed
+reference payload. Qwen is inconclusive: both of its three-reference requests,
+ordinary and adult, timed out with HTTP 524. Its adult-content compatibility was
+therefore not established.
+
+Visual review of the successful dialogue images:
+
+- Seedream produced the best balance of facial resemblance, natural scene, and
+  complete seated pose in this single sample. It made the body somewhat slimmer
+  and shifted the supplied digital-painting appearance toward photorealism.
+- FLUX produced a polished image with strong facial resemblance and clear scene
+  compliance. It cropped the lower body and changed the original proportions.
+- Grok preserved a recognizable face and obeyed the scene, but changed body
+  proportions and made the robe more revealing than requested.
+- Gemini gave the clearest full-room composition and seated pose, but changed
+  face, hairstyle, and colour more than FLUX or Seedream.
+- Qwen returned no dialogue image, so identity retention with references could
+  not be judged.
+
+For text-only portraits, Qwen had the strongest raw photorealistic detail but did
+not follow the requested digital-painting style. Gemini followed that style most
+closely but produced a less natural face. Seedream and Grok were polished
+photo/stylized hybrids. FLUX returned HTTP 400 for this particular portrait
+payload, despite working in earlier application tests and in this run's
+reference-conditioned scene.
+
+The current practical conclusion is to retain FLUX as the integrated baseline
+and treat Seedream as the strongest next candidate for an application A/B test.
+No tested OpenRouter candidate currently satisfies the explicit-adult requirement.
+Do not select Qwen until its three-reference reliability is tested separately
+without treating an HTTP 524 outcome as safe to retry automatically.
+
+Black Forest Labs documents `safety_tolerance` 0–5 for FLUX.2, with 5 the least
+strict setting and 2 the default. OpenRouter exposes this as a provider-specific
+passthrough option. One additional approved FLUX adult request was submitted with
+`safety_tolerance=5`; the connection ended before a response, the outcome remains
+unknown, and no cost was reported. It was not retried. This does not reverse the
+standard-settings rejection or demonstrate FLUX adult-content compatibility.
+
+Sources for the passthrough test:
+
+- OpenRouter Image API provider options:
+  https://openrouter.ai/docs/guides/overview/multimodal/image-generation
+- Black Forest Labs moderation sensitivity and FLUX.2 range:
+  https://docs.bfl.ml/api_integration/errors
