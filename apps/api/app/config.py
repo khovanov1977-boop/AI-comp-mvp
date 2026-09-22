@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     tts_timeout_seconds: int = 180
     tts_response_format: str = "pcm"
     tts_pcm_sample_rate_hz: int = 24000
+    image_provider: str = "disabled"
+    image_base_url: str = "https://openrouter.ai/api/v1"
+    image_api_key: str = ""
+    image_model: str = ""
+    image_timeout_seconds: int = 180
+
+    @property
+    def effective_image_api_key(self) -> str:
+        return self.image_api_key.strip() or self.llm_api_key.strip()
 
     model_config = SettingsConfigDict(env_file=(".env", "../../.env"), extra="ignore")
 

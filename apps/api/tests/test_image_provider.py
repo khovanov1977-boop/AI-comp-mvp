@@ -1,0 +1,132 @@
+import base64
+import json
+import unittest
+from decimal import Decimal
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+import httpx
+from PIL import Image
+
+from app.config import Settings
+from app.providers.image_openrouter import ImageProviderError, OpenRouterImageProvider, image_configuration_error
+from app.services.appearance_prompt import build_appearance_prompt
+from app.services.image_storage import ImageStorageError, normalized_png, read_image, resolve_image_file, save_image
+
+
+class ImageProviderTestCase(unittest.TestCase):
+    def setUp(self):
+        self.config = Settings(_env_file=None, image_provider="openrouter", image_model="black-forest-labs/flux.2-pro",
+                               image_api_key="", llm_api_key="private-test-key")
+        out = BytesIO()
+        Image.new("RGB", (12, 16), "navy").save(out, format="PNG")
+        self.png = out.getvalue()
+
+    def test_payload_and_shared_key_with_one_output(self):
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            self.assertEqual(str(request.url), "https://openrouter.ai/api/v1/images")
+            self.assertEqual(request.headers["Authorization"], "Bearer private-test-key")
+            body = json.loads(request.content)
+            self.assertEqual(body["n"], 1)
+            self.assertFalse(body["provider"]["allow_fallbacks"])
+            self.assertEqual(body["size"], "1024x1024")
+            self.assertEqual(len(body["input_references"]), 2)
+            self.assertEqual(body["input_references"][0]["image_url"]["url"], "data:image/png;base64," + base64.b64encode(self.png).decode())
+            return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(self.png).decode()}], "usage": {"cost": 0.075}})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="Тест", references=[self.png, self.png])
+        self.assertEqual(result.data, self.png)
+        self.assertEqual(result.cost_usd, Decimal("0.075"))
+        self.assertEqual(len(calls), 1)
+
+    def test_no_retries_or_raw_error_leaks(self):
+        for status in (400, 401, 402, 403, 404, 429, 500, 502):
+            calls = []
+
+            def handler(request):
+                calls.append(request)
+                return httpx.Response(status, json={"error": {"message": "private-test-key internal stack"}})
+
+            with self.subTest(status=status), httpx.Client(transport=httpx.MockTransport(handler)) as client:
+                with self.assertRaises(ImageProviderError) as error:
+                    OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
+                self.assertNotIn("private-test-key", str(error.exception))
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(error.exception.unknown_outcome, status >= 500)
+                if status == 400:
+                    self.assertIn("повторите только неполученные варианты", str(error.exception))
+
+    def test_timeout_is_unknown_and_not_retried(self):
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            raise httpx.ReadTimeout("secret-private-test-key")
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(ImageProviderError) as error:
+                OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
+        self.assertTrue(error.exception.unknown_outcome)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("private-test-key", str(error.exception))
+
+    def test_malformed_responses_rejected(self):
+        for body in ({"data": []}, {"data": [{"url": "https://untrusted.example/image"}]}, {"data": [{"b64_json": "!!!!"}]}, {"data": None}):
+            with self.subTest(body=body), httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))) as client:
+                with self.assertRaises(ImageProviderError):
+                    OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
+
+    def test_existing_key_not_sent_to_arbitrary_host(self):
+        self.config.image_base_url = "https://example.com/api/v1"
+        self.assertTrue(image_configuration_error(self.config))
+        with self.assertRaises(ImageProviderError):
+            OpenRouterImageProvider(self.config)
+
+    def test_unknown_cost_remains_unknown(self):
+        with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(self.png).decode()}]}))) as client:
+            result = OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
+        self.assertIsNone(result.cost_usd)
+
+    def test_redirect_is_never_followed_even_with_injected_client(self):
+        calls = []
+
+        def handler(request):
+            calls.append(request)
+            return httpx.Response(307, headers={"location": "https://other.example/images"})
+
+        with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+            with self.assertRaises(ImageProviderError):
+                OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
+        self.assertEqual(len(calls), 1)
+
+    def test_storage_validates_content_and_character_scope(self):
+        with TemporaryDirectory() as temporary, patch("app.services.image_storage.IMAGE_STORAGE_ROOT", Path(temporary)):
+            url = save_image("alice", self.png)
+            self.assertTrue(read_image(url, "alice").startswith(b"\x89PNG"))
+            self.assertIsNone(resolve_image_file(url, "bob"))
+            for bad in ("/media-files/../../.env", "https://example.com/a.png", "/media-files/" + "a" * 24 + "/..\\.env.png"):
+                self.assertIsNone(resolve_image_file(bad))
+            with self.assertRaises(ImageStorageError):
+                normalized_png(b"<svg onload=bad()></svg>")
+
+    def test_prompts_preserve_russian_and_omit_unspecified_attributes(self):
+        prompt = build_appearance_prompt("face", {"gender": "female"})
+        self.assertNotIn("hair_color", prompt)
+        self.assertNotIn("age", json.loads(prompt.split("\n")[-1]))
+        prompt = build_appearance_prompt("clothing", {"gender": "female", "glasses": False, "clothing": "Синий свитер"})
+        self.assertIn("without glasses", prompt)
+        self.assertIn("Синий свитер", prompt)
+        self.assertIn("reference 2 defines body proportions", prompt)
+        body = build_appearance_prompt("body", {"gender": "female", "body_details": "Длинные ноги"})
+        self.assertIn("Длинные ноги", body)
+        self.assertIn("form-fitting neutral sportswear", body)
+        self.assertIn("Do not use loose or oversized clothes", body)
+        caucasus = build_appearance_prompt("face", {"gender": "female", "appearance_type": "caucasus"})
+        self.assertIn("appearance from the Caucasus region", caucasus)
+        self.assertNotIn('"appearance_type": "Caucasian appearance"', caucasus)

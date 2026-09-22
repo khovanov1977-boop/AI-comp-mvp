@@ -1,3 +1,57 @@
+export type AppearanceStage = "face" | "body" | "clothing";
+
+export type AppearanceSettings = {
+  gender: "female" | "male" | "non_binary";
+  style?: "photo" | "cartoon" | "anime" | "3d" | "digital_painting" | "comic" | "watercolor";
+  appearance_type?: "european" | "african" | "asian" | "arab" | "latin_american" | "caucasus";
+  age?: number;
+  hair_color?: string;
+  eye_color?: string;
+  hairstyle?: string;
+  glasses?: boolean;
+  face_details?: string;
+  body_type?: "ordinary" | "fit" | "athletic" | "full" | "fat";
+  body_details?: string;
+  clothing?: string;
+  clothing_details?: string;
+};
+
+export type AppearanceCounts = Record<AppearanceStage, number>;
+
+export type ImageGenerationJob = {
+  id: string;
+  stage: AppearanceStage;
+  model: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "interrupted";
+  retry_of: string | null;
+  created_at: string;
+  outputs: Array<{
+    index: number;
+    status: "queued" | "running" | "completed" | "failed" | "unknown" | "not_started";
+    candidate_id: string | null;
+    cost_usd: string | null;
+    error: string;
+  }>;
+};
+
+export type CharacterAppearance = {
+  character_id: string;
+  revision: number;
+  settings: Partial<AppearanceSettings>;
+  counts: AppearanceCounts;
+  selections: Partial<Record<AppearanceStage, string>>;
+  candidates: Array<{ id: string; stage: AppearanceStage; url: string; current: boolean }>;
+  published: null | {
+    version: number;
+    settings: AppearanceSettings;
+    references: Partial<Record<AppearanceStage, { candidate_id: string; asset_id: string; url: string }>>;
+  };
+  generation_available: boolean;
+  generation_unavailable_reason: string;
+  image_model: string;
+  jobs: ImageGenerationJob[];
+};
+
 export type Character = {
   id: string;
   name: string;

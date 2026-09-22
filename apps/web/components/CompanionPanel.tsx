@@ -17,6 +17,7 @@ import {
 } from "../lib/api";
 import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
 import { VoiceSelector } from "./VoiceSelector";
+import { AppearancePanel } from "./AppearancePanel";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
   { value: "user_fact", label: "User facts" },
@@ -444,6 +445,7 @@ export function CompanionPanel({
         {character.dislikes ? <p className="muted">Dislikes: {character.dislikes}</p> : null}
       </section>
 
+      <AppearancePanel key={character.id} character={character} onCharacterChange={onCharacterChange} />
       <details className="character-settings">
         <summary>Character settings</summary>
         <form className="character-settings-form" onSubmit={submitCharacterSettings}>

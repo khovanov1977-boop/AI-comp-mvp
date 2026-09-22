@@ -25,6 +25,15 @@ An AI Companion web app with persistent characters, structured roleplay, memory,
 
 Auth, payments, realtime voice, live avatar, and LoRA are not included yet.
 
+The current character-appearance work adds a face → body → clothing wizard,
+OpenRouter image requests, saved references, and local image files. Offline tests
+pass; after the user changed their connection, one real FLUX.2 Pro portrait
+successfully reached the UI and survived reload ($0.03 reported cost). A live
+body/clothing reference test also succeeded ($0.105 additional reported cost),
+with visual likeness retained in this one front-facing example. Contextual chat images
+are not connected yet. See the
+[image-generation setup and verification notes](docs/image-generation-runbook.md).
+
 ## Project Structure
 
 ```text

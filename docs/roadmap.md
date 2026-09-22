@@ -228,6 +228,72 @@ Focus:
 - Record the current model-selection findings and known TTS reliability limitation.
 - Keep alternative TTS evaluation and web tools deferred.
 
+## Next block: Character Appearance + Contextual Images
+
+Status (updated 2026-09-22): three-stage image pipeline implemented locally with
+OpenRouter / FLUX.2 Pro. After the user changed their connection, the live
+face path passed: button → OpenRouter → local PNG → UI → reload. Earlier HTTP
+403 no longer recurs. One live body/clothing reference cycle also passed with
+recognizable visual likeness and the requested outfit; full-look version 1 saved.
+
+Implemented foundation:
+- Persist optional appearance settings and 1–3 candidates requested per stage.
+- Send current settings atomically with generation; no save/load-draft UI or PUT API.
+- Add per-stage «Дополнительно», partial completion, and large image preview.
+- Preserve independently selected figure/clothing when the face changes.
+- Generate the body in fitted neutral sportswear so proportions remain visible.
+- Validate reference dependencies, candidate ownership, and concurrent revisions.
+- Publish a coherent partial or full reference snapshot independently of chat clearing.
+- Connect OpenRouter, persist generation jobs and image files, display candidates.
+- Guard duplicate submission, partial failures, interrupted requests, and cleanup.
+- Reuse the existing LLM API key; default image generation off in `.env.example`.
+- 117 backend tests and the frontend production build pass.
+
+The user approved up to $3 for the first live test cycle. One single-image attempt
+returned 403 without an image or reported cost; billing could not be verified.
+Calls stopped until the user changed their connection and requested a retry.
+That one-image retry succeeded with reported cost $0.03. A subsequent authorized
+body/clothing test added $0.105; total reported successful-image cost $0.135.
+HF is not connected.
+
+An additional user-authorized test generated one full-body profile and one rear
+view using all three references ($0.15; cumulative reported image-test costs
+$0.285). Both requested view types and outfit continuity passed visual review.
+Profile left/right direction did not match the prompt. These are manual adapter
+tests, not a new UI feature; the confirmed appearance was left unchanged.
+
+Still required: broader identity evaluation across poses/angles and characters,
+then implement contextual chat images. One successful sample is not a stability
+guarantee; the requested fit build appeared slim rather than distinctly muscular.
+See [configuration and verification](image-generation-runbook.md).
+
+Focus:
+- Create the appearance in three stages: face, body, clothing.
+- Offer 1–3 candidates per stage and explicitly confirm the chosen references.
+- Preserve the selected face when creating the body, and face/body when choosing clothing.
+- Generate subsequent images from the confirmed appearance and current dialogue scene.
+- Support both a button and explicit image requests in chat.
+- Start with one image model; compare OpenRouter options with HiDream, Hugging Face, and fal.ai.
+- Keep provider/content compatibility and cost approval explicit before paid API use.
+- Detailed flow: [Character appearance](image-character-flow.md).
+- Additional model research: [Provider comparison](image-provider-comparison.md).
+
+## Backlog: Video Generation Provider Research
+
+Status: deferred until the image/identity workflow is established.
+
+Starting points explicitly requested by the user:
+- Wan model family.
+- LTX / LTX-Video model family.
+- HunyuanVideo model family.
+- fal.ai as a hosting/API catalog, not a single video model.
+
+This list is deliberately non-exhaustive. Search for additional models/providers
+when the video block starts; do not restrict evaluation to these names. Recheck
+current versions, endpoint availability, reference-image identity preservation,
+motion quality, duration, resolution, audio, latency, pricing, and content rules.
+No video model, provider, or paid test has been selected or authorized.
+
 ## Backlog: Web Tools / Internet Access
 
 Status: deferred.
@@ -246,3 +312,21 @@ Focus:
 - Compare providers with a larger catalog of clearly differentiated native-Russian voices.
 - Target at least 10 female and 10 male voices, including under-25 and multiple 40+ options.
 - Introduce internal voice aliases before replacing the provider so existing selections can be migrated.
+
+## Finalization backlog: Next.js Security Update
+
+Status: explicitly deferred by the user on 2026-09-19. The user confirms the
+application currently runs locally only. Do not update dependencies for this item
+during the current feature block; revisit at project finalization, before public
+deployment. Deferral does not mean the vulnerability has been resolved.
+
+- Recheck current security advisories for the pinned Next.js 15.1.4 and its React
+  dependencies, including the reported CVE-2025-66478 / React CVE-2025-55182.
+- Update Next.js and any required related dependencies to compatible, maintained
+  versions with the relevant security fixes; update the lockfile.
+- Run dependency checks, the production build, backend regression tests, and
+  browser smoke checks for character creation, chat, voice, and image workflows.
+- Resolve this item before exposing the application to the internet. If public
+  access is planned earlier, bring this item forward before enabling that access.
+
+Reference: https://nextjs.org/blog/CVE-2025-66478

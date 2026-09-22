@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,13 +6,15 @@ from app.database import get_db
 from app.models.media_asset import MediaAsset
 from app.schemas.media import MediaAssetRead, MediaRequest
 from app.services.media_service import create_mock_media
+from app.services.appearance_service import require_character
 
 router = APIRouter(prefix="/media", tags=["media"])
 
 
 @router.post("/image", response_model=MediaAssetRead)
 def create_image(payload: MediaRequest, db: Session = Depends(get_db)) -> MediaAssetRead:
-    return create_mock_media(db, payload.character_id, "image", payload.prompt)
+    require_character(db, payload.character_id)
+    raise HTTPException(409, "Создавайте образ через мастер внешности персонажа. Генерация сцен из чата пока не подключена.")
 
 
 @router.post("/video", response_model=MediaAssetRead)

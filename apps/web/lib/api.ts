@@ -1,5 +1,8 @@
 import type {
   Character,
+  CharacterAppearance,
+  AppearanceSettings,
+  AppearanceStage,
   ChatMessage,
   CompanionContext,
   Memory,
@@ -9,6 +12,12 @@ import type {
 } from "@ai-companion/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+  }
+}
 
 export function getApiAssetUrl(path: string) {
   if (!path || /^https?:\/\//i.test(path)) {
@@ -31,11 +40,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `API request failed: ${response.status}`;
     try {
       const payload = await response.json();
-      message = payload?.detail?.message ?? payload?.detail ?? message;
+      const detail = payload?.detail;
+      if (typeof detail === "string") message = detail;
+      else if (typeof detail?.message === "string") message = detail.message;
+      else if (Array.isArray(detail)) {
+        message = detail.map((item) => {
+          const field = Array.isArray(item.loc) ? item.loc.filter((part: unknown) => part !== "body").join(".") : "";
+          return `${field ? `${field}: ` : ""}${item.msg ?? "Invalid value"}`;
+        }).join("; ");
+      }
     } catch {
       // Keep the status-based message when the API does not return JSON.
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   return response.json() as Promise<T>;
@@ -121,6 +138,37 @@ export function createCharacter(input: CharacterCreateInput) {
 
 export function getCharacter(characterId: string) {
   return request<Character>(`/characters/${characterId}`);
+}
+
+export function getAppearance(characterId: string) {
+  return request<CharacterAppearance>(`/characters/${characterId}/appearance`);
+}
+
+export function selectAppearanceCandidate(characterId: string, stage: AppearanceStage, candidate_id: string, expected_revision: number) {
+  return request<CharacterAppearance>(`/characters/${characterId}/appearance/select/${stage}`, {
+    method: "POST", body: JSON.stringify({ expected_revision, candidate_id }),
+  });
+}
+
+export function publishAppearance(characterId: string, expected_revision: number, confirm_gender_change: boolean) {
+  return request<CharacterAppearance>(`/characters/${characterId}/appearance/publish`, {
+    method: "POST", body: JSON.stringify({ expected_revision, confirm_gender_change }),
+  });
+}
+
+export type AppearanceGenerationInput = {
+  request_id: string;
+  expected_revision: number;
+  settings?: AppearanceSettings;
+  count?: number;
+  retry_of?: string;
+  confirm_unknown_retry?: boolean;
+};
+
+export function generateAppearance(characterId: string, stage: AppearanceStage, input: AppearanceGenerationInput) {
+  return request<CharacterAppearance>(`/characters/${characterId}/appearance/generate/${stage}`, {
+    method: "POST", body: JSON.stringify(input),
+  });
 }
 
 export function updateCharacter(characterId: string, input: CharacterUpdateInput) {

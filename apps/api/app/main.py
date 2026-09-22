@@ -4,11 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.models import *  # noqa: F403
-from app.routers import characters, chat, debug, health, limits, media, memories, scenes, users, voice
+from app.routers import appearance, characters, chat, debug, health, limits, media, memories, scenes, users, voice
 from app.schema_sync import ensure_dev_schema
 from app.services.voice_storage import VOICE_STORAGE_ROOT
+from app.services.image_storage import IMAGE_STORAGE_ROOT
+from app.services.image_generation import recover_interrupted_jobs
 
 app = FastAPI(title="AI Companion API", version="0.0.1")
 
@@ -45,16 +47,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/voice-files", StaticFiles(directory=VOICE_STORAGE_ROOT, check_dir=False), name="voice-files")
+app.mount("/media-files", StaticFiles(directory=IMAGE_STORAGE_ROOT, check_dir=False), name="media-files")
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_dev_schema(engine)
+    IMAGE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+    with SessionLocal() as db:
+        recover_interrupted_jobs(db)
 
 
 app.include_router(health.router)
 app.include_router(characters.router)
+app.include_router(appearance.router)
 app.include_router(chat.router)
 app.include_router(debug.router)
 app.include_router(media.router)
