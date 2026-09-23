@@ -9,7 +9,7 @@ from app.models.appearance import AppearanceCandidate, CharacterAppearance, Imag
 from app.models.character import Character
 from app.models.media_asset import MediaAsset
 from app.services.voice_catalog import is_voice_compatible
-from app.providers.image_openrouter import image_configuration_error
+from app.providers.image_backend import image_configuration_error, model_for_stage
 from app.services.image_storage import resolve_image_file
 
 STAGES = ("face", "body", "clothing")
@@ -107,7 +107,9 @@ def read_appearance(db: Session, character_id: str) -> dict:
         "candidates": candidates,
         "generation_available": not configuration_error,
         "generation_unavailable_reason": configuration_error,
-        "image_model": settings.image_model.strip(),
+        "image_provider": settings.image_provider,
+        "image_model": model_for_stage("face"),
+        "image_edit_model": model_for_stage("body"),
         "jobs": [job_read(job) for job in jobs],
     }
 

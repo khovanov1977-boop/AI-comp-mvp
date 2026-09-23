@@ -1,7 +1,7 @@
 # Character image generation: local setup and verification
 
-Updated: 2026-09-22. Implementation lives in the `codex/character-appearance`
-worktree. It has not been merged/copied to the main checkout or deployed.
+Updated: 2026-09-23. The Venice Qwen integration is available in the
+appearance wizard. Existing OpenRouter settings remain as a switch-back path.
 
 Latest live result: after the user changed their internet connection, the public
 catalogue and key checks both returned HTTP 200. One explicit retry through the
@@ -68,20 +68,34 @@ The isolated database was opened read-only; published version 1 was not changed.
 
 ## Environment settings
 
-Use the same backend `.env` as the text model; do not create another key:
+Use the same backend `.env` as the text model; do not create another file:
 
 ```env
-IMAGE_PROVIDER=openrouter
+IMAGE_PROVIDER=venice
+VENICE_API_KEY=your_existing_venice_key
+VENICE_IMAGE_MODEL=qwen-image-3
+VENICE_IMAGE_EDIT_MODEL=qwen-edit-uncensored
+IMAGE_TIMEOUT_SECONDS=180
+
+# Retained OpenRouter configuration for a future switch-back:
 IMAGE_BASE_URL=https://openrouter.ai/api/v1
 IMAGE_API_KEY=
 IMAGE_MODEL=black-forest-labs/flux.2-pro
-IMAGE_TIMEOUT_SECONDS=180
 ```
 
-An empty `IMAGE_API_KEY` reuses `LLM_API_KEY`. The latter must be an OpenRouter
-key with available credit. Keep secrets server-side. `.env.example` defaults to
-`IMAGE_PROVIDER=disabled` to avoid accidental paid requests. Restart the backend
-after changing these values. HF is not connected.
+The face stage uses `qwen-image-3` without a reference. Body and clothing use
+`qwen-edit-uncensored`; clothing receives only the selected body image, which
+was derived from the face. This mirrors the successful one-reference Venice
+test. It does not guarantee perfect identity preservation. A provider response
+does not report a cost in the current adapter, so the wizard's per-image cost
+field may be empty; charges still appear on the Venice account.
+
+To switch back, set `IMAGE_PROVIDER=openrouter` and leave the OpenRouter lines
+above in place. For OpenRouter, an empty `IMAGE_API_KEY` reuses `LLM_API_KEY`.
+Keep secrets server-side. `.env.example` defaults to `IMAGE_PROVIDER=disabled`
+to avoid accidental paid requests. Restart the backend after changing provider
+settings. HF is not connected. Chat-scene image generation is still separate
+work; the wizard switch does not enable it.
 
 Install the updated backend requirements (including Pillow) in `apps/api`:
 

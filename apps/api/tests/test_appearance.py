@@ -308,7 +308,7 @@ class AppearanceTestCase(unittest.TestCase):
         self.configure()
         request_id = str(uuid4())
         provider = self.fake_provider()
-        with patch("app.services.image_generation.OpenRouterImageProvider", return_value=provider):
+        with patch("app.services.image_generation.create_image_provider", return_value=provider):
             response = self.client.post(f"{self.path}/generate/face", json={
                 "request_id": request_id, "expected_revision": self.read()["revision"],
                 "settings": self.read()["settings"], "count": 1,
@@ -327,7 +327,7 @@ class AppearanceTestCase(unittest.TestCase):
     def test_first_generation_persists_parameters_without_draft_endpoint(self):
         self.enable_images()
         provider = self.fake_provider()
-        with patch("app.services.image_generation.OpenRouterImageProvider", return_value=provider):
+        with patch("app.services.image_generation.create_image_provider", return_value=provider):
             response = self.client.post(f"{self.path}/generate/face", json={
                 "request_id": str(uuid4()), "expected_revision": 0, "count": 2,
                 "settings": {"gender": "female", "face_details": "Веснушки и ямочки на щеках"},
@@ -366,6 +366,32 @@ class AppearanceTestCase(unittest.TestCase):
         run_generation(job_id, self.sessions, provider)
         self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 2)
         self.assertIn("reference 1 defines the face", provider.generate.call_args.kwargs["prompt"])
+
+    def test_venice_pair_uses_only_latest_reference_and_keeps_openrouter_settings(self):
+        self.complete()
+        with patch.multiple(settings, image_provider="venice", venice_api_key="unit-test-venice-key"):
+            state = self.read()
+            self.assertTrue(state["generation_available"])
+            self.assertEqual(state["image_model"], "qwen-image-3")
+            self.assertEqual(state["image_edit_model"], "qwen-edit-uncensored")
+            provider = self.fake_provider()
+            face_job, _ = self.submit_job("face")
+            run_generation(face_job, self.sessions, provider)
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-image-3")
+            self.assertEqual(provider.generate.call_args.kwargs["references"], [])
+            body_job, _ = self.submit_job("body")
+            run_generation(body_job, self.sessions, provider)
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
+            self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
+            clothing_job, _ = self.submit_job("clothing")
+            run_generation(clothing_job, self.sessions, provider)
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
+            self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
+            self.assertIn("selected body image", provider.generate.call_args.kwargs["prompt"])
+            with self.sessions() as db:
+                self.assertEqual(db.get(ImageGenerationJob, clothing_job).input_context["image_provider"], "venice")
+                assets = db.scalars(select(MediaAsset).where(MediaAsset.provider.like("venice:%"))).all()
+                self.assertEqual(len(assets), 3)
 
     def test_generation_requires_parameters_and_prior_references(self):
         self.enable_images()

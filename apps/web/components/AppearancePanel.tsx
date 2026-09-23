@@ -269,7 +269,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
           <p className="muted">Смена лица не удаляет выбранную фигуру или одежду: их можно сохранить как отдельные референсы. Если сочетание выглядит несовместимо, пересоздайте только нужный последующий этап.</p>
           {changed && <p role="status" className="muted">Изменённые параметры будут применены при следующем нажатии «Создать варианты».</p>}
           {appearance.generation_unavailable_reason && <p className="muted">{appearance.generation_unavailable_reason}</p>}
-          {appearance.generation_available && <p className="muted">Модель: {appearance.image_model}. Создание изображений платное; списание идёт с вашего OpenRouter. Автоматические повторы отключены.</p>}
+          {appearance.generation_available && <p className="muted">Модели: {appearance.image_model}{appearance.image_edit_model !== appearance.image_model ? ` → ${appearance.image_edit_model}` : ""}. Создание изображений платное; списание идёт с вашего {appearance.image_provider === "venice" ? "Venice" : "OpenRouter"}. Автоматические повторы отключены.</p>}
           <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || !appearance.generation_available} onClick={() => void generate()}>
             {running ? "Генерация выполняется…" : `Создать варианты (${counts[stage]})`}
           </button>

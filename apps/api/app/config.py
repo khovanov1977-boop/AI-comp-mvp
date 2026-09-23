@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     image_api_key: str = ""
     image_model: str = ""
     image_timeout_seconds: int = 180
+    venice_api_key: str = ""
+    venice_image_model: str = "qwen-image-3"
+    venice_image_edit_model: str = "qwen-edit-uncensored"
 
     @property
     def effective_image_api_key(self) -> str:

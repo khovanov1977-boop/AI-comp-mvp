@@ -49,6 +49,8 @@ export type CharacterAppearance = {
   generation_available: boolean;
   generation_unavailable_reason: string;
   image_model: string;
+  image_edit_model: string;
+  image_provider: string;
   jobs: ImageGenerationJob[];
 };
 

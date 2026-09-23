@@ -16,7 +16,8 @@ from app.config import settings
 from app.models.appearance import AppearanceCandidate, CharacterAppearance, ImageGenerationJob
 from app.models.character import Character
 from app.models.media_asset import MediaAsset
-from app.providers.image_openrouter import ImageProviderError, OpenRouterImageProvider, image_configuration_error
+from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage
+from app.providers.image_openrouter import ImageProviderError
 from app.schemas.appearance import AppearanceGenerate
 from app.services.appearance_prompt import build_appearance_prompt
 from app.services.appearance_service import STAGES, candidate_asset, commit_appearance, require_character, require_revision, stage_context
@@ -42,9 +43,10 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         if existing.character_id != character_id or existing.stage != stage or existing.retry_of != (str(payload.retry_of) if payload.retry_of else None):
             raise HTTPException(409, "Идентификатор запроса уже используется другим заданием.")
         return existing, False
-    error = image_configuration_error()
-    if error:
-        raise HTTPException(503, error)
+    if not payload.retry_of:
+        error = image_configuration_error()
+        if error:
+            raise HTTPException(503, error)
     appearance = db.get(CharacterAppearance, character_id)
     require_revision(appearance, payload.expected_revision)
     if db.scalar(select(ImageGenerationJob.id).where(ImageGenerationJob.active_key == character_id)):
@@ -77,13 +79,22 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         raise HTTPException(409, "Исходные параметры генерации не найдены.")
     context = stage_context(appearance, stage)
     count = appearance.counts[stage]
-    prompt = build_appearance_prompt(stage, context["settings"])
+    provider_name = settings.image_provider
+    model = model_for_stage(stage)
+    prompt = build_appearance_prompt(stage, context["settings"], provider_name)
     if retry_of:
         parent = db.get(ImageGenerationJob, retry_of)
         if not parent or parent.character_id != character_id or parent.stage != stage:
             raise HTTPException(404, "Исходное задание не найдено.")
-        if parent.status in {"queued", "running"} or parent.input_context != context:
+        if (parent.status in {"queued", "running"}
+                or parent.input_context.get("settings") != context["settings"]
+                or parent.input_context.get("references") != context["references"]):
             raise HTTPException(409, "Повтор недоступен: задание ещё выполняется или параметры изменились.")
+        provider_name = parent.input_context.get("image_provider", "openrouter")
+        error = image_configuration_error(provider_name=provider_name)
+        if error:
+            raise HTTPException(503, error)
+        model = parent.model
         if db.scalar(select(ImageGenerationJob.id).where(ImageGenerationJob.retry_of == retry_of)):
             raise HTTPException(409, "Повтор этого задания уже создан. Обновите состояние.")
         failed = [item for item in parent.outputs if item["status"] != "completed"]
@@ -93,11 +104,12 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
             raise HTTPException(409, "Результат предыдущего запроса неизвестен. Подтвердите возможное повторное списание.")
         count = len(failed)
         prompt = parent.prompt
+    context["image_provider"] = provider_name
     if not 1 <= count <= 3:
         raise HTTPException(422, "Количество вариантов должно быть от 1 до 3.")
     job = ImageGenerationJob(
         id=job_id, character_id=character_id, active_key=character_id, retry_of=retry_of,
-        stage=stage, model=settings.image_model.strip(), input_context=context,
+        stage=stage, model=model, input_context=context,
         prompt=prompt, status="queued",
         outputs=[{"index": index, "status": "queued", "candidate_id": None, "cost_usd": None, "error": ""} for index in range(count)],
     )
@@ -148,6 +160,7 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
             return
         job = db.get(ImageGenerationJob, job_id)
         character_id, model, prompt, context = job.character_id, job.model, job.prompt, deepcopy(job.input_context)
+        provider_name = context.get("image_provider", "openrouter")
         count = len(job.outputs)
     for index in range(count):
         references = []
@@ -156,7 +169,10 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
                 job = db.get(ImageGenerationJob, job_id)
                 if not job or not db.get(Character, character_id):
                     return
-                for ref_id in context["references"].values():
+                reference_ids = list(context["references"].values())
+                if provider_name == "venice" and reference_ids:
+                    reference_ids = reference_ids[-1:]
+                for ref_id in reference_ids:
                     candidate = db.get(AppearanceCandidate, ref_id)
                     asset = candidate_asset(db, candidate) if candidate else None
                     if not asset:
@@ -164,7 +180,7 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
                     references.append(read_image(asset.url, character_id))
                 _update_output(db, job, index, status="running")
                 db.commit()
-            active_provider = provider or OpenRouterImageProvider()
+            active_provider = provider or create_image_provider(provider_name)
             result = active_provider.generate(model=model, prompt=prompt, references=references)
             # The request can complete after deletion. Recheck before writing files.
             url = None
@@ -183,7 +199,7 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
                         return
                     url = save_image(character_id, result.data)
                     asset = MediaAsset(character_id=character_id, media_type="image", url=url,
-                                       provider=f"openrouter:{model}", prompt=prompt)
+                                       provider=f"{provider_name}:{model}", prompt=prompt)
                     db.add(asset)
                     db.flush()
                     candidate = AppearanceCandidate(character_id=character_id, stage=job.stage,
