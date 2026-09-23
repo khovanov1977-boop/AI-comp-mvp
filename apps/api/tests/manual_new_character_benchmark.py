@@ -89,6 +89,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--models", nargs="+", choices=MODELS, default=list(MODELS))
     parser.add_argument("--budget-usd", type=Decimal, default=Decimal("0"))
     parser.add_argument("--confirm-paid", default="")
     parser.add_argument("--execute", action="store_true")
@@ -96,6 +97,8 @@ def main() -> int:
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.run_id):
         raise SystemExit("Use a lowercase alphanumeric run id, optionally with hyphens.")
+    selected_models = list(dict.fromkeys(args.models))
+    planned_requests = len(selected_models) * len(SCENES)
     prompts = {scene: CHARACTER + instruction for scene, instruction in SCENES.items()}
     plan = {
         "run_id": args.run_id,
@@ -103,11 +106,11 @@ def main() -> int:
         "appearance": APPEARANCE,
         "original_scenes_ru": ORIGINAL_SCENES_RU,
         "prompts": prompts,
-        "models": list(MODELS),
+        "models": selected_models,
         "size": "1024x1024",
         "outputs_per_request": 1,
-        "planned_requests": len(MODELS) * len(SCENES),
-        "reservation_usd": str(RESERVATION_PER_REQUEST_USD * len(MODELS) * len(SCENES)),
+        "planned_requests": planned_requests,
+        "reservation_usd": str(RESERVATION_PER_REQUEST_USD * planned_requests),
     }
     print(json.dumps(plan, ensure_ascii=False, indent=2), flush=True)
     if not args.execute:
@@ -115,7 +118,7 @@ def main() -> int:
         return 0
     if args.confirm_paid != CONFIRMATION:
         raise SystemExit(f"Paid run requires --confirm-paid {CONFIRMATION}")
-    if args.budget_usd < RESERVATION_PER_REQUEST_USD * len(MODELS) * len(SCENES):
+    if args.budget_usd < RESERVATION_PER_REQUEST_USD * planned_requests:
         raise SystemExit("Budget is below the planned request reservation.")
 
     load_dotenv(args.env_file)
@@ -134,7 +137,7 @@ def main() -> int:
             json.dump(plan, output, ensure_ascii=False, indent=2)
 
     reported_total = Decimal("0")
-    for model in MODELS:
+    for model in selected_models:
         baseline_path = output_dir / f"{model_filename(model, 'baseline')}.png"
         for scene, prompt in prompts.items():
             stem = model_filename(model, scene)

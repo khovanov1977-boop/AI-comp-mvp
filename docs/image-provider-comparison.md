@@ -278,12 +278,14 @@ image failed, so its later calls were text-only. Default provider settings,
 | --- | --- | --- | --- | ---: |
 | FLUX.2 Pro | Completed | Completed with 1 reference | HTTP 400 | $0.075 |
 | Seedream 5.0 Pro | HTTP 400 | Completed without a reference | HTTP 400 | $0.045 |
+| Seedream 5.0 Pro — repeat | Completed | Completed with 1 reference; recognizable face retained | HTTP 400 | $0.090 |
 | Qwen Image 3 Pro | Completed | Completed with 1 reference | Image returned, but character fully clothed | $0.126 |
 | Grok Imagine Image 2.0 | Completed | Completed with 1 reference | HTTP 400 | $0.130 |
 | Gemini 3.1 Flash Image | Completed | Completed with 1 reference | HTTP 400 | $0.1350915 |
 
-Ten images were returned from 15 requests. OpenRouter reported $0.5110915 for
-successful responses; failed responses had no reported cost. Visual inspection
+The original five-model run returned ten images from 15 requests; the Seedream
+repeat row is excluded from those totals. OpenRouter reported $0.5110915 for
+the original successful responses; failed responses had no reported cost. Visual inspection
 found recognizable character continuity in the FLUX, Qwen, and Grok sofa images.
 Gemini retained the general appearance with somewhat weaker facial similarity.
 Seedream cannot be assessed for reference-based identity in this run. Qwen's
@@ -291,3 +293,14 @@ window image followed the requested lighting, setting, stretch, and partial side
 view, but the character wore a top and trousers, so its API success does **not**
 meet the adult-content requirement. The HTTP 400 responses do not identify their
 specific causes because the adapter discards raw upstream error bodies.
+
+The separate Seedream repeat on 2026-09-23 used the same character and prompts,
+with all three requests sent exactly once. The full-body starting image succeeded;
+the sofa request used that image as its sole reference (recorded in its call
+report). Visual inspection shows a recognizable match in face shape, hair, and
+general body proportions despite the new pose and bathrobe. This confirms
+reference-based continuity for this one sofa example, not a measured reliability
+rate. The nude window request used the same reference but again returned HTTP 400;
+its precise cause remains unknown. The two successful calls reported $0.090.
+Images, manifest, and individual reports are in the ignored local folder
+`apps/api/data/model-benchmark/seedream-full-retry-2026-09-23/`.
