@@ -367,3 +367,20 @@ identify the triggering phrase or establish the reason for any other model's
 refusal. The diagnostic request returned no image or reported `usage.cost`.
 Its local report is in
 `apps/api/data/model-benchmark/seedream-sofa-error-diagnostic-2026-09-23/`.
+
+Four further one-call diagnostics repeated **scene 1 only** for the remaining
+models with the same prompt and each model's original sofa reference:
+
+| Model | Diagnostic result | Provider message or visual check | Reported cost |
+| --- | --- | --- | ---: |
+| FLUX.2 Pro | HTTP 400 | Black Forest Labs flagged sexual/adult content | Not reported |
+| Qwen Image 3 Pro | Image returned | Recognizable character and room, requested outfit and most pose details; one shoe rests on the coffee table rather than the floor | $0.043 |
+| Grok Imagine Image 2.0 | HTTP 400 | xAI content moderation | Not reported |
+| Gemini 3.1 Flash Image | HTTP 400 | Gemini content moderation | Not reported |
+
+The original Qwen HTTP 400 has no stored upstream explanation, and this later
+success does not establish its reliability. The three moderation messages
+identify the reason for these particular repeat refusals, not the precise
+triggering phrase or the reason for scene 2 refusals. The four reports and
+Qwen image are in the ignored local folder
+`apps/api/data/model-benchmark/four-models-sofa-error-diagnostic-2026-09-23/`.
