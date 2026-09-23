@@ -357,3 +357,13 @@ network outcomes. No `usage.cost` was reported; this is not a billing audit.
 The underlying reason is unknown because the adapter does not retain upstream
 error bodies. Compared with the earlier window scene, the pose, wording, and
 reference image all changed, so this run does not isolate the cause.
+
+One later diagnostic request repeated **Seedream scene 1** with the identical
+prompt and reference, now retaining selected bounded provider-error fields.
+It again returned HTTP 400; the provider message was
+`Seedream blocked this request through content moderation.` This identifies
+moderation as the reason for that particular Seedream refusal, but does not
+identify the triggering phrase or establish the reason for any other model's
+refusal. The diagnostic request returned no image or reported `usage.cost`.
+Its local report is in
+`apps/api/data/model-benchmark/seedream-sofa-error-diagnostic-2026-09-23/`.

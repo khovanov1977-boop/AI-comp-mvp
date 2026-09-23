@@ -77,10 +77,39 @@ class ImageProviderTestCase(unittest.TestCase):
                 with self.assertRaises(ImageProviderError) as error:
                     OpenRouterImageProvider(self.config, client).generate(model=self.config.image_model, prompt="p", references=[])
                 self.assertNotIn("private-test-key", str(error.exception))
+                self.assertNotIn("private-test-key", json.dumps(error.exception.diagnostic))
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(error.exception.unknown_outcome, status >= 500)
                 if status == 400:
                     self.assertIn("повторите только неполученные варианты", str(error.exception))
+
+    def test_bounded_provider_diagnostic_is_not_user_facing(self):
+        def handler(request):
+            return httpx.Response(400, json={"error": {
+                "code": "INVALID_INPUT", "message": "private-test-key invalid image request",
+                "metadata": {"provider_name": "Test Provider", "raw": "reference count exceeded"},
+            }})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(ImageProviderError) as error:
+                OpenRouterImageProvider(self.config, client).generate(
+                    model=self.config.image_model, prompt="p", references=[])
+        self.assertEqual(error.exception.diagnostic["http_status"], 400)
+        self.assertEqual(error.exception.diagnostic["code"], "INVALID_INPUT")
+        self.assertEqual(error.exception.diagnostic["provider_name"], "Test Provider")
+        self.assertEqual(error.exception.diagnostic["provider_raw"], "reference count exceeded")
+        self.assertNotIn("private-test-key", json.dumps(error.exception.diagnostic))
+        self.assertNotIn("reference count exceeded", str(error.exception))
+
+    def test_oversized_error_body_is_not_retained(self):
+        with httpx.Client(transport=httpx.MockTransport(
+            lambda request: httpx.Response(400, content=b"x" * 20000)
+        )) as client:
+            with self.assertRaises(ImageProviderError) as error:
+                OpenRouterImageProvider(self.config, client).generate(
+                    model=self.config.image_model, prompt="p", references=[])
+        self.assertEqual(error.exception.diagnostic["body_note"],
+                         "error body exceeds diagnostic limit")
 
     def test_timeout_is_unknown_and_not_retried(self):
         calls = []

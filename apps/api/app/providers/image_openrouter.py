@@ -5,6 +5,7 @@ import binascii
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import json
+import re
 
 import httpx
 
@@ -12,12 +13,61 @@ from app.config import Settings, settings
 
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_ERROR_BYTES = 16 * 1024
+
+
+def _safe_error_text(value: object, api_key: str) -> str:
+    if isinstance(value, (dict, list)):
+        value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    text = str(value)
+    if api_key:
+        text = text.replace(api_key, "[redacted]")
+    text = re.sub(r"(?i)bearer\s+[^\s,;\"']+", "Bearer [redacted]", text)
+    text = re.sub(r"data:image/[^\s\"']+", "[image data redacted]", text)
+    return text[:1000]
+
+
+def _error_diagnostic(response: httpx.Response, api_key: str) -> dict[str, str | int]:
+    """Read a bounded error body; retain selected fields without exposing them to UI."""
+    diagnostic: dict[str, str | int] = {"http_status": response.status_code}
+    chunks, size = [], 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if size > MAX_ERROR_BYTES:
+            diagnostic["body_note"] = "error body exceeds diagnostic limit"
+            return diagnostic
+        chunks.append(chunk)
+    try:
+        body = json.loads(b"".join(chunks))
+    except (ValueError, UnicodeDecodeError):
+        diagnostic["body_note"] = "non-JSON error body"
+        return diagnostic
+    if not isinstance(body, dict):
+        return diagnostic
+    error = body.get("error")
+    if isinstance(error, str):
+        diagnostic["message"] = _safe_error_text(error, api_key)
+        return diagnostic
+    if not isinstance(error, dict):
+        return diagnostic
+    for key in ("code", "type", "message"):
+        if key in error and error[key] is not None:
+            diagnostic[key] = _safe_error_text(error[key], api_key)
+    metadata = error.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("provider_name", "reason", "raw"):
+            if key in metadata and metadata[key] is not None:
+                field = key if key == "provider_name" else f"provider_{key}"
+                diagnostic[field] = _safe_error_text(metadata[key], api_key)
+    return diagnostic
 
 
 class ImageProviderError(Exception):
-    def __init__(self, message: str, *, unknown_outcome: bool = False):
+    def __init__(self, message: str, *, unknown_outcome: bool = False,
+                 diagnostic: dict[str, str | int] | None = None):
         super().__init__(message)
         self.unknown_outcome = unknown_outcome
+        self.diagnostic = diagnostic
 
 
 @dataclass(frozen=True)
@@ -81,6 +131,7 @@ class OpenRouterImageProvider:
                                headers={"Authorization": f"Bearer {self.api_key}"}, timeout=self.timeout,
                                follow_redirects=False) as response:
                 if response.status_code >= 400:
+                    diagnostic = _error_diagnostic(response, self.api_key)
                     messages = {
                         400: "OpenRouter отклонил запрос (HTTP 400). Автоповтор отключён; проверьте параметры или повторите только неполученные варианты.",
                         401: "OpenRouter отклонил API-ключ.",
@@ -91,7 +142,8 @@ class OpenRouterImageProvider:
                     }
                     raise ImageProviderError(messages.get(response.status_code,
                         f"OpenRouter вернул ошибку HTTP {response.status_code}. Автоповтор отключён."),
-                        unknown_outcome=response.status_code >= 500)
+                        unknown_outcome=response.status_code >= 500,
+                        diagnostic=diagnostic)
                 if response.status_code != 200:
                     raise ImageProviderError("Неожиданный ответ OpenRouter; повтор не выполнен.", unknown_outcome=True)
                 chunks, size = [], 0
