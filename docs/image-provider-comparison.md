@@ -174,10 +174,13 @@ that is not proof that the provider will never bill an unknown-outcome request.
 
 `HTTP 400` is recorded as rejection, not as a definitive provider policy label,
 because the application adapter deliberately does not persist raw upstream error
-messages. For FLUX, Seedream, Grok, and Gemini the same request shape and the same
-three references worked for the ordinary dialogue scene, while the adult prompt
-was rejected. That strongly indicates content moderation rather than a malformed
-reference payload. Qwen is inconclusive: both of its three-reference requests,
+messages. The benchmark character's saved age is 20, while the adult prompt says
+she is 25 or older and also asks to preserve her apparent age. This contradiction
+is a defect in the test design. The same three references worked for the ordinary
+dialogue scene on FLUX, Seedream, Grok, and Gemini, so the adult prompt is a likely
+factor, but its HTTP 400 cannot be attributed specifically to moderation without
+the upstream error reason or a corrected controlled comparison. Qwen is
+inconclusive: both of its three-reference requests,
 ordinary and adult, timed out with HTTP 524. Its adult-content compatibility was
 therefore not established.
 
@@ -198,13 +201,18 @@ Visual review of the successful dialogue images:
 For text-only portraits, Qwen had the strongest raw photorealistic detail but did
 not follow the requested digital-painting style. Gemini followed that style most
 closely but produced a less natural face. Seedream and Grok were polished
-photo/stylized hybrids. FLUX returned HTTP 400 for this particular portrait
-payload, despite working in earlier application tests and in this run's
-reference-conditioned scene.
+photo/stylized hybrids. The portrait benchmark sent all saved fields, including
+body shape and a bikini, together with a head-and-shoulders portrait request. The
+application's face stage sends only the shared and face-specific fields. FLUX
+returned HTTP 400 for this different payload, despite working in the application
+face stage and in this run's reference-conditioned scene; the upstream reason was
+not recorded. Its failure here is not evidence that ordinary face generation has
+stopped working.
 
 The current practical conclusion is to retain FLUX as the integrated baseline
 and treat Seedream as the strongest next candidate for an application A/B test.
-No tested OpenRouter candidate currently satisfies the explicit-adult requirement.
+This run did not demonstrate the explicit-adult requirement for any candidate;
+the contradictory adult prompt prevents a definitive moderation comparison.
 Do not select Qwen until its three-reference reliability is tested separately
 without treating an HTTP 524 outcome as safe to retry automatically.
 
@@ -241,9 +249,9 @@ were not repeated.
 | Gemini 3.1 Flash Image explicit adult | HTTP 400 again |
 
 OpenRouter reported no cost for any retry, and no new image was returned. The
-repeated results strengthen two conclusions: the adult prompt is consistently
-rejected by FLUX, Seedream, Grok, and Gemini through these endpoints, including
-FLUX at its least strict documented setting; and Qwen Image 3 Pro is not reliable
-enough for the three-reference application flow in this configuration. HTTP 400
-is still recorded as rejection rather than a raw moderation reason because the
-adapter intentionally does not retain provider error bodies.
+repeated results show that the *same adult prompt* consistently receives HTTP 400
+from FLUX, Seedream, Grok, and Gemini through these endpoints, including FLUX at
+its least strict documented setting. Repeating an internally contradictory prompt
+does not determine why it was rejected. Qwen Image 3 Pro again timed out for both
+three-reference requests, indicating a reliability problem in this configuration.
+The adapter intentionally does not retain raw provider error bodies.
