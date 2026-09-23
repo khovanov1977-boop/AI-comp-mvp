@@ -329,3 +329,31 @@ $0.088 in total; HTTP 400 responses had no reported cost. This shows Seedream
 and Qwen can render this clothed scene with a character reference in a single
 attempt. It does not establish a reliable success rate or explain the three
 HTTP 400 responses, because the adapter does not retain upstream error bodies.
+
+## Two living-room lingerie scenes (2026-09-23)
+
+The same fictional 35-year-old character was requested in two new scenes in the
+same living room, both in a black lace bra, black T-string thong, black lace
+stockings, and black high heels. Scene 1 places her seated on the sofa with
+feet apart on the floor, hands supporting her bust, and gaze to the side.
+Scene 2 places her bent forward beside the sofa, hands on it, viewed from a
+rear-side angle while looking toward the camera. Each model received the
+identical two scene prompts and its own existing sofa image as one reference;
+Seedream's reference came from its successful repeat. Exact prompts and hashes
+are in the ignored local folder
+`apps/api/data/model-benchmark/living-room-lingerie-two-scenes-2026-09-23/`.
+
+| Model | Seated scene | Leaning scene | Reported cost |
+| --- | --- | --- | ---: |
+| FLUX.2 Pro | HTTP 400 | HTTP 400 | Not reported |
+| Seedream 5.0 Pro | HTTP 400 | HTTP 400 | Not reported |
+| Qwen Image 3 Pro | HTTP 400 | HTTP 400 | Not reported |
+| Grok Imagine Image 2.0 | HTTP 400 | HTTP 400 | Not reported |
+| Gemini 3.1 Flash Image | HTTP 400 | HTTP 400 | Not reported |
+
+All ten requests were sent once without automatic retry. No image was returned.
+All ten responses were definite HTTP 400 rejections, rather than uncertain
+network outcomes. No `usage.cost` was reported; this is not a billing audit.
+The underlying reason is unknown because the adapter does not retain upstream
+error bodies. Compared with the earlier window scene, the pose, wording, and
+reference image all changed, so this run does not isolate the cause.
