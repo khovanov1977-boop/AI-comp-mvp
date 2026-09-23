@@ -255,3 +255,39 @@ its least strict documented setting. Repeating an internally contradictory promp
 does not determine why it was rejected. Qwen Image 3 Pro again timed out for both
 three-reference requests, indicating a reliability problem in this configuration.
 The adapter intentionally does not retain raw provider error bodies.
+
+## Isolated new-character comparison (2026-09-23)
+
+The user specified a new, separate fictional character for a fresh paid test:
+photorealistic European woman, age 35, dark chestnut hair, full lips, average
+build, large bust, and broad hips. The other attributes were left unspecified.
+The exact English prompts, original Russian scene descriptions, and 15 call
+reports are in the ignored local folder
+`apps/api/data/model-benchmark/european-woman-35-2026-09-23/`. The main
+application database was not changed.
+
+The three scenes were a neutral full-body starting image, sitting on a living-room
+sofa in a bathrobe, and standing nude by a window in morning sunlight with the
+body side-on, arched back, hands behind the head, and face turned toward the
+camera. Every model received the same text. Its own starting image was supplied
+as one reference to the later two calls when available. Seedream's starting
+image failed, so its later calls were text-only. Default provider settings,
+1024×1024, one output per request, and no automatic retries were used.
+
+| Model | Starting image | Sofa scene | Nude window scene | Reported successful cost |
+| --- | --- | --- | --- | ---: |
+| FLUX.2 Pro | Completed | Completed with 1 reference | HTTP 400 | $0.075 |
+| Seedream 5.0 Pro | HTTP 400 | Completed without a reference | HTTP 400 | $0.045 |
+| Qwen Image 3 Pro | Completed | Completed with 1 reference | Image returned, but character fully clothed | $0.126 |
+| Grok Imagine Image 2.0 | Completed | Completed with 1 reference | HTTP 400 | $0.130 |
+| Gemini 3.1 Flash Image | Completed | Completed with 1 reference | HTTP 400 | $0.1350915 |
+
+Ten images were returned from 15 requests. OpenRouter reported $0.5110915 for
+successful responses; failed responses had no reported cost. Visual inspection
+found recognizable character continuity in the FLUX, Qwen, and Grok sofa images.
+Gemini retained the general appearance with somewhat weaker facial similarity.
+Seedream cannot be assessed for reference-based identity in this run. Qwen's
+window image followed the requested lighting, setting, stretch, and partial side
+view, but the character wore a top and trousers, so its API success does **not**
+meet the adult-content requirement. The HTTP 400 responses do not identify their
+specific causes because the adapter discards raw upstream error bodies.
