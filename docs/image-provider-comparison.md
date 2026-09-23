@@ -304,3 +304,28 @@ rate. The nude window request used the same reference but again returned HTTP 40
 its precise cause remains unknown. The two successful calls reported $0.090.
 Images, manifest, and individual reports are in the ignored local folder
 `apps/api/data/model-benchmark/seedream-full-retry-2026-09-23/`.
+
+## Clothed window-scene follow-up (2026-09-23)
+
+The same fictional 35-year-old character was requested by a morning window in
+side profile, stretching and looking toward the camera, now wearing a black lace
+bra, black T-string thong, and black lace stockings. Each model received the
+identical prompt and one reference: its original full-body image, except
+Seedream, whose successful repeat supplied the reference. There was one paid
+call per model and no automatic retry. The exact prompt, reference hashes,
+images, and reports are in the ignored local folder
+`apps/api/data/model-benchmark/window-lingerie-all-models-2026-09-23/`.
+
+| Model | Clothed window scene | Visual check | Reported cost |
+| --- | --- | --- | ---: |
+| FLUX.2 Pro | HTTP 400 | No image | Not reported |
+| Seedream 5.0 Pro | Completed | Recognizable identity, requested outfit and window; legs cropped, both raised arms not shown | $0.045 |
+| Qwen Image 3 Pro | Completed | Generally recognizable identity, full body and requested outfit; only one raised arm, body proportions shift | $0.043 |
+| Grok Imagine Image 2.0 | HTTP 400 | No image | Not reported |
+| Gemini 3.1 Flash Image | HTTP 400 | No image | Not reported |
+
+Two images were returned from five requests. Successful responses reported
+$0.088 in total; HTTP 400 responses had no reported cost. This shows Seedream
+and Qwen can render this clothed scene with a character reference in a single
+attempt. It does not establish a reliable success rate or explain the three
+HTTP 400 responses, because the adapter does not retain upstream error bodies.
