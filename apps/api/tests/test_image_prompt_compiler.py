@@ -95,6 +95,25 @@ class ImagePromptCompilerTestCase(unittest.TestCase):
         self.assertIn("Asian appearance", result.prompt)
         self.assertIn("eyeglasses", result.negative_prompt)
 
+    def test_detailed_full_build_edit_prompt_fits_venice_limit(self):
+        class PassthroughTranslator:
+            def translate(self, values):
+                return values
+
+        settings = {
+            "gender": "female", "style": "photo", "appearance_type": "european", "age": 40,
+            "hair_color": "vivid copper-red", "eye_color": "bright green",
+            "hairstyle": "shoulder-length wavy hair", "glasses": False,
+            "face_details": "full lips, dark red lipstick, bright makeup and expressive features",
+            "body_type": "full", "face_adjustment": "allow",
+            "body_details": "a naturally full figure with a softly rounded waist and visible proportions",
+        }
+        result = ImagePromptCompiler(PassthroughTranslator()).compile("body", settings, "venice")
+        self.assertLessEqual(len(result.prompt), 1500)
+        self.assertIn("subtly adjust facial fullness", result.prompt)
+        self.assertIn("Only these fitted items", result.prompt)
+        self.assertIn("Both irises must be bright green", result.prompt)
+
     def test_translation_failure_is_sanitized_and_not_retried(self):
         calls = []
 
