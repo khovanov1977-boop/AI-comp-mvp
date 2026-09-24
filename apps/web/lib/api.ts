@@ -14,7 +14,7 @@ import type {
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(message: string, public readonly status: number, public readonly code = "") {
     super(message);
   }
 }
@@ -38,11 +38,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = `API request failed: ${response.status}`;
+    let code = "";
     try {
       const payload = await response.json();
       const detail = payload?.detail;
       if (typeof detail === "string") message = detail;
-      else if (typeof detail?.message === "string") message = detail.message;
+      else if (typeof detail?.message === "string") {
+        message = detail.message;
+        if (typeof detail.error === "string") code = detail.error;
+      }
       else if (Array.isArray(detail)) {
         message = detail.map((item) => {
           const field = Array.isArray(item.loc) ? item.loc.filter((part: unknown) => part !== "body").join(".") : "";
@@ -52,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the status-based message when the API does not return JSON.
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code);
   }
 
   return response.json() as Promise<T>;

@@ -428,7 +428,9 @@ class AppearanceTestCase(unittest.TestCase):
             "settings": {"gender": "female", "hair_color": "фиолетовые"},
         })
         self.assertEqual(response.status_code, 503)
-        self.assertIn("не запускалась", response.json()["detail"])
+        detail = response.json()["detail"]
+        self.assertEqual(detail["error"], "image_prompt_compilation_failed")
+        self.assertIn("не запускалась", detail["message"])
         with self.sessions() as db:
             self.assertIsNone(db.get(CharacterAppearance, self.character_id))
             self.assertIsNone(db.scalar(select(ImageGenerationJob)))

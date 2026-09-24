@@ -5,6 +5,7 @@ it never silently resubmits a potentially billable upstream request.
 """
 
 from copy import deepcopy
+import logging
 from threading import RLock, Semaphore
 
 from fastapi import HTTPException
@@ -37,6 +38,7 @@ from app.services.image_storage import ImageStorageError, delete_image, read_ima
 IMAGE_COMMIT_LOCK = RLock()
 GENERATION_SLOTS = Semaphore(2)
 TERMINAL_OUTPUTS = {"completed", "failed", "unknown", "not_started"}
+logger = logging.getLogger(__name__)
 
 
 def job_read(job: ImageGenerationJob) -> dict:
@@ -85,10 +87,22 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         }
         try:
             compiled = get_image_prompt_compiler().compile(stage, context["settings"], provider_name)
-        except ImagePromptCompilerError:
+        except ImagePromptCompilerError as exc:
+            logger.warning(
+                "image_prompt_compilation_failed stage=%s provider=%s reason=%s",
+                stage,
+                provider_name,
+                str(exc),
+            )
             raise HTTPException(
                 503,
-                "Не удалось подготовить английское описание внешности. Генерация изображения не запускалась.",
+                {
+                    "error": "image_prompt_compilation_failed",
+                    "message": (
+                        "Не удалось подготовить английское описание внешности. "
+                        "Генерация изображения не запускалась; запрос можно безопасно отправить снова."
+                    ),
+                },
             ) from None
         if appearance is None:
             appearance = CharacterAppearance(character_id=character_id, settings={}, selections={},

@@ -3,21 +3,24 @@ import unittest
 
 import httpx
 
+from app.config import Settings
 from app.services.image_prompt_compiler import (
     ImagePromptCompiler,
     ImagePromptCompilerError,
     OpenAICompatibleAppearanceTranslator,
+    get_image_prompt_compiler,
 )
 
 
 class ImagePromptCompilerTestCase(unittest.TestCase):
-    def translator(self, handler):
+    def translator(self, handler, fallback_models=()):
         client = httpx.Client(transport=httpx.MockTransport(handler))
         self.addCleanup(client.close)
         return OpenAICompatibleAppearanceTranslator(
             base_url="https://openrouter.ai/api/v1",
             api_key="private-test-key",
             model="test/model",
+            fallback_models=fallback_models,
             client=client,
         )
 
@@ -54,6 +57,34 @@ class ImagePromptCompilerTestCase(unittest.TestCase):
         self.assertIn("Both irises must be emerald green", result.prompt)
         self.assertNotIn("рыжие", result.prompt)
         self.assertIn("eyeglasses", result.negative_prompt)
+
+    def test_openrouter_sends_ordered_model_failovers(self):
+        def handler(request):
+            body = json.loads(request.content)
+            self.assertNotIn("model", body)
+            self.assertEqual(body["models"], ["test/model", "backup/one", "backup/two"])
+            return httpx.Response(200, json={"choices": [{"message": {
+                "content": json.dumps({"hair_color": "dark blonde"})
+            }}]})
+
+        translator = self.translator(handler, ("backup/one", "backup/two"))
+        self.assertEqual(translator.translate({"hair_color": "темно-русые"}), {
+            "hair_color": "dark blonde",
+        })
+
+    def test_factory_uses_dedicated_openrouter_models_then_chat_model(self):
+        config = Settings(
+            _env_file=None,
+            llm_provider="openai_compatible",
+            llm_base_url="https://openrouter.ai/api/v1",
+            llm_api_key="key",
+            llm_model="chat/model",
+            image_prompt_models="translation/one, translation/two",
+        )
+        translator = get_image_prompt_compiler(config).translator
+        self.assertIsInstance(translator, OpenAICompatibleAppearanceTranslator)
+        self.assertEqual(translator.model, "translation/one")
+        self.assertEqual(translator.fallback_models, ("translation/two", "chat/model"))
 
     def test_enum_only_settings_need_no_translator(self):
         result = ImagePromptCompiler(None).compile(

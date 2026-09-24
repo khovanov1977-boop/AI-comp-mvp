@@ -157,7 +157,8 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
       rememberPending(null);
       setNotice("Задание принято. Результаты появятся ниже; страницу можно перезагрузить.");
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status < 500) rememberPending(null);
+      if (reason instanceof ApiError
+        && (reason.status < 500 || reason.code === "image_prompt_compilation_failed")) rememberPending(null);
       setError(reason instanceof Error ? reason.message : "Не удалось отправить запрос.");
     } finally { submitting.current = false; setBusy(false); }
   }

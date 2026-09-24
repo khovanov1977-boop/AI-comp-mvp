@@ -49,6 +49,7 @@ class OpenAICompatibleAppearanceTranslator:
         model: str,
         timeout_seconds: int = 60,
         max_tokens: int = 1000,
+        fallback_models: tuple[str, ...] = (),
         client: httpx.Client | None = None,
     ) -> None:
         self.base_url = base_url.strip()
@@ -56,6 +57,7 @@ class OpenAICompatibleAppearanceTranslator:
         self.model = model.strip()
         self.timeout_seconds = timeout_seconds
         self.max_tokens = max_tokens
+        self.fallback_models = tuple(model.strip() for model in fallback_models if model.strip())
         self.client = client
 
     def translate(self, values: dict[str, str]) -> dict[str, str]:
@@ -92,6 +94,9 @@ class OpenAICompatibleAppearanceTranslator:
         }
         if "openrouter.ai" in self.base_url.casefold():
             payload["provider"] = {"require_parameters": True}
+            if self.fallback_models:
+                payload.pop("model")
+                payload["models"] = [self.model, *self.fallback_models]
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
             response = self._post(payload, headers)
@@ -153,11 +158,18 @@ class ImagePromptCompiler:
 def get_image_prompt_compiler(config: Settings = settings) -> ImagePromptCompiler:
     translator = None
     if config.llm_provider.strip().casefold() == "openai_compatible":
+        models = [config.llm_model.strip()]
+        if "openrouter.ai" in config.llm_base_url.casefold():
+            configured = [model.strip() for model in config.image_prompt_models.split(",") if model.strip()]
+            models = configured or models
+            if config.llm_model.strip() and config.llm_model.strip() not in models:
+                models.append(config.llm_model.strip())
         translator = OpenAICompatibleAppearanceTranslator(
             base_url=config.llm_base_url,
             api_key=config.llm_api_key,
-            model=config.llm_model,
+            model=models[0],
             timeout_seconds=config.llm_timeout_seconds,
             max_tokens=max(1000, config.llm_max_tokens),
+            fallback_models=tuple(models[1:]),
         )
     return ImagePromptCompiler(translator)

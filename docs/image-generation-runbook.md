@@ -97,6 +97,12 @@ deterministic. The compiled settings and compiler version are saved with the
 job; an explicit retry reuses the saved prompt and does not translate again. If
 translation fails, no image request is sent.
 
+For OpenRouter, translation uses the `IMAGE_PROMPT_MODELS` failover chain
+(`~google/gemini-flash-latest,~openai/gpt-sol-latest` by default), followed by
+`LLM_MODEL`. OpenRouter moves to the next model on rate limits or downtime and
+bills only the model that returns the successful translation. This auxiliary
+text fallback never repeats a Venice image request.
+
 To switch back, set `IMAGE_PROVIDER=openrouter` and leave the OpenRouter lines
 above in place. For OpenRouter, an empty `IMAGE_API_KEY` reuses `LLM_API_KEY`.
 Keep secrets server-side. `.env.example` defaults to `IMAGE_PROVIDER=disabled`
@@ -165,7 +171,7 @@ Chat clearing preserves the confirmed appearance. Contextual requests such as
 
 ## Verification and previous access blocker
 
-- Backend regression: **137 tests passed**.
+- Backend regression: **139 tests passed**.
 - `npm run build:web`: passed.
 - Automated coverage includes three outputs, reference propagation, persistence,
   ownership/revisions, duplicate requests/workers, partial retry, unknown cost,
