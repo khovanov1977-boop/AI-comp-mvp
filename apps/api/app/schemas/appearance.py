@@ -19,6 +19,7 @@ class AppearanceSettings(BaseModel):
     glasses: bool | None = Field(default=None, strict=True)
     face_details: str | None = Field(default=None, max_length=1000)
     body_type: Literal["ordinary", "fit", "athletic", "full", "fat"] | None = None
+    face_adjustment: Literal["allow", "preserve"] | None = None
     body_details: str | None = Field(default=None, max_length=1000)
     clothing: str | None = Field(default=None, max_length=1000)
     clothing_details: str | None = Field(default=None, max_length=1000)

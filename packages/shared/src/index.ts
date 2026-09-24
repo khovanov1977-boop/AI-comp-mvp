@@ -11,6 +11,7 @@ export type AppearanceSettings = {
   glasses?: boolean;
   face_details?: string;
   body_type?: "ordinary" | "fit" | "athletic" | "full" | "fat";
+  face_adjustment?: "allow" | "preserve";
   body_details?: string;
   clothing?: string;
   clothing_details?: string;

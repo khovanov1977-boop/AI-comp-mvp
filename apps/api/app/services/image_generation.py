@@ -79,6 +79,10 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         if payload.settings is None or payload.count is None:
             raise HTTPException(422, "Для новой генерации нужны параметры внешности и количество вариантов.")
         raw_settings = payload.settings.model_dump(exclude_none=True)
+        if raw_settings.get("body_type") not in {"full", "fat"}:
+            raw_settings.pop("face_adjustment", None)
+        if stage == "body" and raw_settings.get("body_type") in {"full", "fat"} and "face_adjustment" not in raw_settings:
+            raise HTTPException(422, "Выберите, можно ли корректировать лицо при создании фигуры.")
         context = {
             "settings": stage_settings(raw_settings, stage),
             "references": {

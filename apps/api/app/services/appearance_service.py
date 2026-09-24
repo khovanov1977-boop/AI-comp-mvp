@@ -16,7 +16,7 @@ STAGES = ("face", "body", "clothing")
 SHARED_FIELDS = ("gender", "style")
 STAGE_FIELDS = {
     "face": ("appearance_type", "age", "hair_color", "eye_color", "hairstyle", "glasses", "face_details"),
-    "body": ("body_type", "body_details"),
+    "body": ("body_type", "face_adjustment", "body_details"),
     "clothing": ("clothing", "clothing_details"),
 }
 

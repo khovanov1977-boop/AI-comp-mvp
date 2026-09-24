@@ -113,6 +113,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
       const next = { ...previous };
       if (value === undefined) delete next[key];
       else next[key] = value;
+      if (key === "body_type" && value !== previous.body_type) delete next.face_adjustment;
       return next;
     });
     setNotice("");
@@ -126,6 +127,8 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
     && (candidate.current || appearance.selections[stage] === candidate.id)) ?? [];
   const latestJob = appearance?.jobs.find((job) => job.stage === stage);
   const stageReady = stage === "face" || (stage === "body" ? !!appearance?.selections.face : !!appearance?.selections.face && !!appearance?.selections.body);
+  const needsFaceAdjustmentChoice = stage === "body" && (settings.body_type === "full" || settings.body_type === "fat")
+    && !settings.face_adjustment;
   const retryCount = latestJob?.outputs.filter((item) => item.status !== "completed").length ?? 0;
   const selectedCount = stages.filter(({ id }) => appearance?.selections[id]).length;
   const selectionsCurrent = stages.every(({ id }) => !appearance?.selections[id]
@@ -135,6 +138,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
 
   async function generate(retryJob?: ImageGenerationJob, resend?: PendingSubmission) {
     if (!appearance || submitting.current || !settings.gender) return;
+    if (!retryJob && !resend && needsFaceAdjustmentChoice) return;
     let confirmUnknown = false;
     if (retryJob?.outputs.some((item) => item.status === "unknown")) {
       confirmUnknown = window.confirm("Результат предыдущего запроса неизвестен. Новый запрос может вызвать повторное списание. Продолжить?");
@@ -248,6 +252,12 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
                     <option value="">Не задан</option>{bodyTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
+                {(settings.body_type === "full" || settings.body_type === "fat") && <div className="appearance-face-adjustment stack" role="group" aria-label="Корректировка лица">
+                  <p>При таком типе фигуры лицо в большинстве случаев тоже выглядит полнее: щёки могут быть более округлыми, контур лица — мягче. Возможны исключения. Что сделать с выбранным лицом?</p>
+                  <label><input type="radio" name={`face-adjustment-${character.id}`} checked={settings.face_adjustment === "allow"} onChange={() => change("face_adjustment", "allow")} /> Разрешить при необходимости мягко скорректировать лицо</label>
+                  <label><input type="radio" name={`face-adjustment-${character.id}`} checked={settings.face_adjustment === "preserve"} onChange={() => change("face_adjustment", "preserve")} /> Оставить выбранное лицо без изменений</label>
+                  {needsFaceAdjustmentChoice && <span className="muted">Выберите один из вариантов перед созданием фигуры.</span>}
+                </div>}
                 <p className="muted">Для оценки пропорций фигура создаётся в нейтральном облегающем спортивном комплекте.</p>
               </>}
               {stage === "clothing" && <label className="field"><span className="label">Начальная одежда</span>
@@ -271,7 +281,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
           {changed && <p role="status" className="muted">Изменённые параметры будут применены при следующем нажатии «Создать варианты».</p>}
           {appearance.generation_unavailable_reason && <p className="muted">{appearance.generation_unavailable_reason}</p>}
           {appearance.generation_available && <p className="muted">Модели: {appearance.image_model}{appearance.image_edit_model !== appearance.image_model ? ` → ${appearance.image_edit_model}` : ""}. Создание изображений платное; списание идёт с вашего {appearance.image_provider === "venice" ? "Venice" : "OpenRouter"}. Автоматические повторы отключены.</p>}
-          <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || !appearance.generation_available} onClick={() => void generate()}>
+          <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || needsFaceAdjustmentChoice || !appearance.generation_available} onClick={() => void generate()}>
             {running ? "Генерация выполняется…" : `Создать варианты (${counts[stage]})`}
           </button>
           {pendingSubmission && <div className="stack">

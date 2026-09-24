@@ -27,6 +27,8 @@ def build_appearance_prompt(stage: str, settings: dict, provider_name: str = "op
             value = GENDERS[value]
         elif key == "appearance_type":
             value = APPEARANCE_TYPES[value]
+        elif key == "face_adjustment":
+            continue
         elif key == "glasses":
             if value:
                 value = "wearing glasses"
@@ -48,10 +50,17 @@ def build_appearance_prompt(stage: str, settings: dict, provider_name: str = "op
         "female": " Keep the chest, torso, and overall figure anatomically female, while preserving the specified build.",
         "male": " Keep the chest and torso anatomically male.",
     }.get(settings.get("gender"), "")
+    body_face = (
+        "Preserve their recognizable identity, hair, apparent age and visual style. "
+        "If needed, subtly adjust facial fullness in the cheeks and jaw contour to harmonize with "
+        "the specified build. Preserve defining facial features, including the eyes, nose and mouth."
+        if settings.get("body_type") in {"full", "fat"} and settings.get("face_adjustment") == "allow"
+        else "Preserve their face and facial shape, hair, apparent age and visual style."
+    )
     instructions = {
         "face": "Create a single character portrait, face clearly visible, neutral background. One person, one image, no collage or text.",
         "body": (f"Create a single full-body image of the SAME {body_person} as reference 1. "
-                 "Preserve their face, hair, apparent age and visual style. Neutral standing pose and background, "
+                 f"{body_face} Neutral standing pose and background, "
                  f"head and feet visible. Dress them in plain, non-transparent, form-fitting neutral sportswear: {body_outfit}."
                  f"{body_anatomy} Keep the outfit limited to these fitted items so body proportions remain visible. "
                  "One person, no collage or text."),

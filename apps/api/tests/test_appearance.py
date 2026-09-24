@@ -236,6 +236,17 @@ class AppearanceTestCase(unittest.TestCase):
         old_face = next(c for c in self.read()["candidates"] if c["id"] == before["selections"]["face"])
         self.assertFalse(old_face["current"])
 
+    def test_face_adjustment_choice_only_invalidates_body_and_later_stages(self):
+        self.configure({"gender": "female", "body_type": "full", "face_adjustment": "allow"})
+        face = self.add_candidate("face")
+        self.assertEqual(self.choose("face", face).status_code, 200)
+        body = self.add_candidate("body")
+        self.assertEqual(self.choose("body", body).status_code, 200)
+        self.assertEqual(self.configure({"gender": "female", "body_type": "full", "face_adjustment": "preserve"}).status_code, 200)
+        candidates = {candidate["id"]: candidate for candidate in self.read()["candidates"]}
+        self.assertTrue(candidates[face]["current"])
+        self.assertFalse(candidates[body]["current"])
+
     def test_counts_and_reselecting_same_face_keep_selection(self):
         self.complete()
         before = self.read()
@@ -383,6 +394,24 @@ class AppearanceTestCase(unittest.TestCase):
         run_generation(job_id, self.sessions, provider)
         self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 2)
         self.assertIn("reference 1 defines the face", provider.generate.call_args.kwargs["prompt"])
+
+    def test_full_body_generation_requires_face_adjustment_choice(self):
+        self.enable_images()
+        self.configure({"gender": "female", "body_type": "full"})
+        self.assertEqual(self.choose("face", self.add_candidate("face")).status_code, 200)
+        response = self.client.post(f"{self.path}/generate/body", json={
+            "request_id": str(uuid4()), "expected_revision": self.read()["revision"],
+            "settings": self.read()["settings"], "count": 1,
+        })
+        self.assertEqual(response.status_code, 422)
+        with self.sessions() as db:
+            self.assertIsNone(db.scalar(select(ImageGenerationJob)))
+        self.assertEqual(self.configure({"gender": "female", "body_type": "full", "face_adjustment": "allow"}).status_code, 200)
+        job_id, _ = self.submit_job("body")
+        with self.sessions() as db:
+            job = db.get(ImageGenerationJob, job_id)
+            self.assertEqual(job.input_context["settings"]["face_adjustment"], "allow")
+            self.assertIn("subtly adjust facial fullness", job.prompt)
 
     def test_venice_pair_uses_only_latest_reference_and_keeps_openrouter_settings(self):
         self.configure({"gender": "female", "glasses": False, "hair_color": "рыжие", "eye_color": "зеленые"})

@@ -200,6 +200,27 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertNotIn("anatomically female", non_binary)
         self.assertNotIn("anatomically male", non_binary)
 
+    def test_full_body_face_adjustment_follows_explicit_choice(self):
+        for body_type in ("full", "fat"):
+            with self.subTest(body_type=body_type):
+                allow = build_appearance_prompt("body", {
+                    "gender": "female", "body_type": body_type, "face_adjustment": "allow",
+                }, "venice")
+                preserve = build_appearance_prompt("body", {
+                    "gender": "female", "body_type": body_type, "face_adjustment": "preserve",
+                }, "venice")
+                self.assertIn("subtly adjust facial fullness", allow)
+                self.assertIn("Preserve defining facial features", allow)
+                self.assertNotIn("facial shape", allow)
+                self.assertIn("Preserve their face and facial shape", preserve)
+                self.assertNotIn("adjust facial fullness", preserve)
+                self.assertNotIn("face_adjustment", allow)
+                self.assertNotIn("face_adjustment", preserve)
+        ordinary = build_appearance_prompt("body", {
+            "gender": "female", "body_type": "ordinary", "face_adjustment": "allow",
+        }, "venice")
+        self.assertNotIn("adjust facial fullness", ordinary)
+
     def test_no_glasses_uses_venice_negative_prompt_for_face_only(self):
         settings = {"gender": "female", "glasses": False}
         negative = build_appearance_negative_prompt("face", settings, "venice")

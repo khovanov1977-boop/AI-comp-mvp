@@ -842,6 +842,22 @@ select {
   min-width: 0;
 }
 
+.appearance-face-adjustment {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.appearance-face-adjustment p {
+  margin: 0;
+}
+
+.appearance-face-adjustment label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .appearance-stages {
   display: flex;
   flex-wrap: wrap;
