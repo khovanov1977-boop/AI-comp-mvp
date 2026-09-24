@@ -200,6 +200,28 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertNotIn("anatomically female", non_binary)
         self.assertNotIn("anatomically male", non_binary)
 
+    def test_body_build_descriptions_distinguish_type_and_gender(self):
+        expected_traits = {
+            "ordinary": "moderate body fat",
+            "fit": "flat belly, minimal excess fat",
+            "athletic": "developed arm",
+            "full": "small rounded belly",
+            "fat": "thick arms and legs",
+        }
+        for body_type, trait in expected_traits.items():
+            with self.subTest(body_type=body_type):
+                female = build_appearance_prompt("body", {"gender": "female", "body_type": body_type}, "venice")
+                male = build_appearance_prompt("body", {"gender": "male", "body_type": body_type}, "venice")
+                female_build = json.loads(female.split("\n")[-1])["body_type"]
+                male_build = json.loads(male.split("\n")[-1])["body_type"]
+                self.assertIn(trait, female_build)
+                self.assertIn(trait, male_build)
+                self.assertIn("female", female_build)
+                self.assertIn("male", male_build)
+                self.assertNotEqual(female_build.replace("female", ""), male_build.replace("male", ""))
+        non_binary = build_appearance_prompt("body", {"gender": "non_binary", "body_type": "full"}, "venice")
+        self.assertEqual(json.loads(non_binary.split("\n")[-1])["body_type"], "full, curvy build")
+
     def test_full_body_face_adjustment_follows_explicit_choice(self):
         for body_type in ("full", "fat"):
             with self.subTest(body_type=body_type):
