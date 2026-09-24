@@ -176,10 +176,25 @@ class ImageProviderTestCase(unittest.TestCase):
         body = build_appearance_prompt("body", {"gender": "female", "body_details": "long legs"})
         self.assertIn("long legs", body)
         self.assertIn("form-fitting neutral sportswear", body)
-        self.assertIn("Do not use loose or oversized clothes", body)
+        self.assertIn("short fitted sports top and leggings", body)
+        self.assertIn("Keep the outfit limited to these fitted items", body)
         caucasus = build_appearance_prompt("face", {"gender": "female", "appearance_type": "caucasus"})
         self.assertIn("appearance from the Caucasus region", caucasus)
         self.assertNotIn('"appearance_type": "Caucasian appearance"', caucasus)
+
+    def test_body_outfit_follows_selected_gender(self):
+        male = build_appearance_prompt("body", {"gender": "male", "body_details": "slightly overweight"}, "venice")
+        female = build_appearance_prompt("body", {"gender": "female"}, "venice")
+        non_binary = build_appearance_prompt("body", {"gender": "non_binary"}, "venice")
+        self.assertIn("SAME male person", male)
+        self.assertIn("men's athletic tank top and fitted training tights", male)
+        self.assertIn("chest and torso anatomically male", male)
+        self.assertIn("slightly overweight", male)
+        self.assertNotIn("leggings", male)
+        self.assertNotIn("dresses or skirts", male)
+        self.assertIn("short fitted sports top and leggings", female)
+        self.assertNotIn("anatomically male", female)
+        self.assertIn("fitted sleeveless athletic top and training tights", non_binary)
 
     def test_no_glasses_uses_venice_negative_prompt_for_face_only(self):
         settings = {"gender": "female", "glasses": False}
