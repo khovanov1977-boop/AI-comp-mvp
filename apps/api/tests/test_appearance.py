@@ -368,7 +368,7 @@ class AppearanceTestCase(unittest.TestCase):
         self.assertIn("reference 1 defines the face", provider.generate.call_args.kwargs["prompt"])
 
     def test_venice_pair_uses_only_latest_reference_and_keeps_openrouter_settings(self):
-        self.configure({"gender": "female", "glasses": False})
+        self.configure({"gender": "female", "glasses": False, "hair_color": "рыжие", "eye_color": "зеленые"})
         self.complete()
         with patch.multiple(settings, image_provider="venice", venice_api_key="unit-test-venice-key"):
             state = self.read()
@@ -381,7 +381,11 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-image-3")
             self.assertEqual(provider.generate.call_args.kwargs["references"], [])
             self.assertIn("eyeglasses", provider.generate.call_args.kwargs["negative_prompt"])
+            self.assertIn("brown hair", provider.generate.call_args.kwargs["negative_prompt"])
+            self.assertIn("hazel eyes", provider.generate.call_args.kwargs["negative_prompt"])
             self.assertNotIn("glasses", provider.generate.call_args.kwargs["prompt"])
+            self.assertIn("vivid natural copper-red", provider.generate.call_args.kwargs["prompt"])
+            self.assertIn("clear saturated green", provider.generate.call_args.kwargs["prompt"])
             body_job, _ = self.submit_job("body")
             run_generation(body_job, self.sessions, provider)
             self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")

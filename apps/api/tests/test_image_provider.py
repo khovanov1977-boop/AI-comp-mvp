@@ -189,3 +189,25 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertIsNone(build_appearance_negative_prompt("body", settings, "venice"))
         self.assertIsNone(build_appearance_negative_prompt("face", settings, "openrouter"))
         self.assertIsNone(build_appearance_negative_prompt("face", {"gender": "female", "glasses": True}, "venice"))
+
+    def test_common_russian_colors_become_mandatory_unambiguous_traits(self):
+        settings = {"gender": "female", "hair_color": "рыжие", "eye_color": "зелёные"}
+        prompt = build_appearance_prompt("face", settings, "venice")
+        self.assertIn("MANDATORY IDENTITY TRAITS", prompt)
+        self.assertIn("Hair must be vivid natural copper-red from roots to ends", prompt)
+        self.assertIn("Both irises must be clear saturated green", prompt)
+        self.assertIn("Structured attributes override conflicting free-text details", prompt)
+        self.assertNotIn("рыжие", prompt)
+        self.assertNotIn("зелёные", prompt)
+        negative = build_appearance_negative_prompt("face", settings, "venice")
+        self.assertIn("brown hair", negative)
+        self.assertIn("auburn hair", negative)
+        self.assertIn("brown eyes", negative)
+        self.assertIn("hazel eyes", negative)
+
+    def test_custom_colors_are_preserved_verbatim(self):
+        prompt = build_appearance_prompt("face", {
+            "gender": "female", "hair_color": "фиолетово-серебристые", "eye_color": "изумрудные",
+        }, "venice")
+        self.assertIn("фиолетово-серебристые", prompt)
+        self.assertIn("изумрудные", prompt)
