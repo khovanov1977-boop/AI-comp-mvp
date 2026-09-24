@@ -12,7 +12,7 @@ from PIL import Image
 
 from app.config import Settings
 from app.providers.image_openrouter import ImageProviderError, OpenRouterImageProvider, image_configuration_error
-from app.services.appearance_prompt import build_appearance_prompt
+from app.services.appearance_prompt import build_appearance_negative_prompt, build_appearance_prompt
 from app.services.image_storage import ImageStorageError, normalized_png, read_image, resolve_image_file, save_image
 
 
@@ -169,7 +169,8 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertNotIn("hair_color", prompt)
         self.assertNotIn("age", json.loads(prompt.split("\n")[-1]))
         prompt = build_appearance_prompt("clothing", {"gender": "female", "glasses": False, "clothing": "Синий свитер"})
-        self.assertIn("without glasses", prompt)
+        self.assertNotIn("glasses", prompt)
+        self.assertIn("unobstructed eyes", prompt)
         self.assertIn("Синий свитер", prompt)
         self.assertIn("reference 2 defines body proportions", prompt)
         body = build_appearance_prompt("body", {"gender": "female", "body_details": "Длинные ноги"})
@@ -179,3 +180,12 @@ class ImageProviderTestCase(unittest.TestCase):
         caucasus = build_appearance_prompt("face", {"gender": "female", "appearance_type": "caucasus"})
         self.assertIn("appearance from the Caucasus region", caucasus)
         self.assertNotIn('"appearance_type": "Caucasian appearance"', caucasus)
+
+    def test_no_glasses_uses_venice_negative_prompt_for_face_only(self):
+        settings = {"gender": "female", "glasses": False}
+        negative = build_appearance_negative_prompt("face", settings, "venice")
+        self.assertIn("eyeglasses", negative)
+        self.assertIn("eyewear", negative)
+        self.assertIsNone(build_appearance_negative_prompt("body", settings, "venice"))
+        self.assertIsNone(build_appearance_negative_prompt("face", settings, "openrouter"))
+        self.assertIsNone(build_appearance_negative_prompt("face", {"gender": "female", "glasses": True}, "venice"))

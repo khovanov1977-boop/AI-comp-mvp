@@ -19,7 +19,7 @@ from app.models.media_asset import MediaAsset
 from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage
 from app.providers.image_openrouter import ImageProviderError
 from app.schemas.appearance import AppearanceGenerate
-from app.services.appearance_prompt import build_appearance_prompt
+from app.services.appearance_prompt import build_appearance_negative_prompt, build_appearance_prompt
 from app.services.appearance_service import STAGES, candidate_asset, commit_appearance, require_character, require_revision, stage_context
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
 
@@ -82,6 +82,7 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
     provider_name = settings.image_provider
     model = model_for_stage(stage)
     prompt = build_appearance_prompt(stage, context["settings"], provider_name)
+    negative_prompt = build_appearance_negative_prompt(stage, context["settings"], provider_name)
     if retry_of:
         parent = db.get(ImageGenerationJob, retry_of)
         if not parent or parent.character_id != character_id or parent.stage != stage:
@@ -104,7 +105,12 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
             raise HTTPException(409, "Результат предыдущего запроса неизвестен. Подтвердите возможное повторное списание.")
         count = len(failed)
         prompt = parent.prompt
+        negative_prompt = parent.input_context.get("negative_prompt")
+        if negative_prompt is None:
+            negative_prompt = build_appearance_negative_prompt(stage, context["settings"], provider_name)
     context["image_provider"] = provider_name
+    if negative_prompt:
+        context["negative_prompt"] = negative_prompt
     if not 1 <= count <= 3:
         raise HTTPException(422, "Количество вариантов должно быть от 1 до 3.")
     job = ImageGenerationJob(
@@ -181,7 +187,10 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
                 _update_output(db, job, index, status="running")
                 db.commit()
             active_provider = provider or create_image_provider(provider_name)
-            result = active_provider.generate(model=model, prompt=prompt, references=references)
+            provider_arguments = {"model": model, "prompt": prompt, "references": references}
+            if negative_prompt := context.get("negative_prompt"):
+                provider_arguments["negative_prompt"] = negative_prompt
+            result = active_provider.generate(**provider_arguments)
             # The request can complete after deletion. Recheck before writing files.
             url = None
             try:

@@ -38,7 +38,7 @@ class VeniceImageProvider:
         self.edit_model = config.venice_image_edit_model.strip()
         self.client = client
 
-    def generate(self, *, model: str, prompt: str, references: list[bytes],
+    def generate(self, *, model: str, prompt: str, references: list[bytes], negative_prompt: str | None = None,
                  provider_options: dict[str, dict] | None = None) -> GeneratedImage:
         if provider_options:
             raise ImageProviderError("Дополнительные параметры провайдера Venice не поддерживаются.")
@@ -46,7 +46,11 @@ class VeniceImageProvider:
             endpoint = "image/generate"
             payload = {"model": model, "prompt": prompt, "aspect_ratio": "2:3", "resolution": "1K",
                        "format": "png", "variants": 1, "safe_mode": False, "enhance_prompt": False}
+            if negative_prompt:
+                payload["negative_prompt"] = negative_prompt
         elif len(references) == 1 and model == self.edit_model:
+            if negative_prompt:
+                raise ImageProviderError("Отрицательный промпт Venice поддерживается только при создании изображения.")
             endpoint = "image/edit"
             payload = {"model": model, "prompt": prompt,
                        "image": base64.b64encode(references[0]).decode("ascii"),

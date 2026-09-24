@@ -41,6 +41,7 @@ class VeniceImageTestCase(unittest.TestCase):
             if str(request.url).endswith("/image/generate"):
                 self.assertEqual(body["model"], "qwen-image-3")
                 self.assertEqual(body["resolution"], "1K")
+                self.assertEqual(body["negative_prompt"], "glasses, eyewear")
                 self.assertNotIn("image", body)
                 return httpx.Response(200, json={"images": [base64.b64encode(self.png).decode()]})
             self.assertTrue(str(request.url).endswith("/image/edit"))
@@ -51,9 +52,19 @@ class VeniceImageTestCase(unittest.TestCase):
 
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             provider = VeniceImageProvider(self.config, client)
-            self.assertEqual(provider.generate(model="qwen-image-3", prompt="face", references=[]).data, self.png)
+            self.assertEqual(provider.generate(model="qwen-image-3", prompt="face", references=[],
+                                               negative_prompt="glasses, eyewear").data, self.png)
             self.assertEqual(provider.generate(model="qwen-edit-uncensored", prompt="body", references=[self.png]).data, self.png)
         self.assertEqual(len(calls), 2)
+
+    def test_negative_prompt_is_rejected_for_edit_before_paid_request(self):
+        calls = []
+        with httpx.Client(transport=httpx.MockTransport(lambda request: calls.append(request))) as client:
+            with self.assertRaises(ImageProviderError):
+                VeniceImageProvider(self.config, client).generate(
+                    model="qwen-edit-uncensored", prompt="body", references=[self.png],
+                    negative_prompt="glasses")
+        self.assertEqual(calls, [])
 
     def test_wrong_reference_count_cannot_send_paid_request(self):
         calls = []
