@@ -160,10 +160,10 @@ def get_image_prompt_compiler(config: Settings = settings) -> ImagePromptCompile
     if config.llm_provider.strip().casefold() == "openai_compatible":
         models = [config.llm_model.strip()]
         if "openrouter.ai" in config.llm_base_url.casefold():
-            configured = [model.strip() for model in config.image_prompt_models.split(",") if model.strip()]
-            models = configured or models
-            if config.llm_model.strip() and config.llm_model.strip() not in models:
-                models.append(config.llm_model.strip())
+            for candidate in config.image_prompt_models.split(","):
+                model = candidate.strip()
+                if model and model not in models:
+                    models.append(model)
         translator = OpenAICompatibleAppearanceTranslator(
             base_url=config.llm_base_url,
             api_key=config.llm_api_key,

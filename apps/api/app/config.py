@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 60
     llm_temperature: float = 0.3
     llm_max_tokens: int = 500
-    image_prompt_models: str = "~google/gemini-flash-latest,~openai/gpt-sol-latest"
+    image_prompt_models: str = "qwen/qwen3-30b-a3b-instruct-2507,sao10k/l3-lunaris-8b"
     stt_provider: str = "openrouter"
     stt_base_url: str = ""
     stt_api_key: str = ""

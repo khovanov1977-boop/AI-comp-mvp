@@ -72,19 +72,21 @@ class ImagePromptCompilerTestCase(unittest.TestCase):
             "hair_color": "dark blonde",
         })
 
-    def test_factory_uses_dedicated_openrouter_models_then_chat_model(self):
+    def test_factory_uses_chat_model_then_requested_fallbacks(self):
         config = Settings(
             _env_file=None,
             llm_provider="openai_compatible",
             llm_base_url="https://openrouter.ai/api/v1",
             llm_api_key="key",
             llm_model="chat/model",
-            image_prompt_models="translation/one, translation/two",
+            image_prompt_models="qwen/qwen3-30b-a3b-instruct-2507, sao10k/l3-lunaris-8b, chat/model",
         )
         translator = get_image_prompt_compiler(config).translator
         self.assertIsInstance(translator, OpenAICompatibleAppearanceTranslator)
-        self.assertEqual(translator.model, "translation/one")
-        self.assertEqual(translator.fallback_models, ("translation/two", "chat/model"))
+        self.assertEqual(translator.model, "chat/model")
+        self.assertEqual(translator.fallback_models, (
+            "qwen/qwen3-30b-a3b-instruct-2507", "sao10k/l3-lunaris-8b",
+        ))
 
     def test_enum_only_settings_need_no_translator(self):
         result = ImagePromptCompiler(None).compile(

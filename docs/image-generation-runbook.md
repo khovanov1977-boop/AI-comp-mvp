@@ -97,11 +97,11 @@ deterministic. The compiled settings and compiler version are saved with the
 job; an explicit retry reuses the saved prompt and does not translate again. If
 translation fails, no image request is sent.
 
-For OpenRouter, translation uses the `IMAGE_PROMPT_MODELS` failover chain
-(`~google/gemini-flash-latest,~openai/gpt-sol-latest` by default), followed by
-`LLM_MODEL`. OpenRouter moves to the next model on rate limits or downtime and
-bills only the model that returns the successful translation. This auxiliary
-text fallback never repeats a Venice image request.
+For OpenRouter, translation starts with `LLM_MODEL`, then falls back to
+`IMAGE_PROMPT_MODELS` (`qwen/qwen3-30b-a3b-instruct-2507`, then
+`sao10k/l3-lunaris-8b` by default). OpenRouter moves to the next model on rate
+limits or downtime and bills the model that returns the successful translation.
+This auxiliary text fallback never repeats a Venice image request.
 
 To switch back, set `IMAGE_PROVIDER=openrouter` and leave the OpenRouter lines
 above in place. For OpenRouter, an empty `IMAGE_API_KEY` reuses `LLM_API_KEY`.
