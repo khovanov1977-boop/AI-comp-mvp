@@ -41,7 +41,7 @@ export type CharacterAppearance = {
   settings: Partial<AppearanceSettings>;
   counts: AppearanceCounts;
   selections: Partial<Record<AppearanceStage, string>>;
-  candidates: Array<{ id: string; stage: AppearanceStage; url: string; current: boolean }>;
+  candidates: Array<{ id: string; stage: AppearanceStage; url: string; current: boolean; created_at: string }>;
   published: null | {
     version: number;
     settings: AppearanceSettings;

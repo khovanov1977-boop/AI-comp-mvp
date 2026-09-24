@@ -1,4 +1,7 @@
+from datetime import timezone
+
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -8,6 +11,7 @@ from app.config import settings
 from app.models.appearance import AppearanceCandidate, CharacterAppearance, ImageGenerationJob
 from app.models.character import Character
 from app.models.media_asset import MediaAsset
+from app.schemas.appearance import AppearanceSettings
 from app.services.voice_catalog import is_voice_compatible
 from app.providers.image_backend import image_configuration_error, model_for_stage
 from app.services.image_storage import resolve_image_file
@@ -50,11 +54,15 @@ def stage_context(appearance: CharacterAppearance, stage: str) -> dict:
 
 
 def stage_settings(settings: dict, stage: str) -> dict:
+    fields = settings_fields(stage)
+    return {key: settings[key] for key in fields if key in settings}
+
+
+def settings_fields(stage: str) -> tuple[str, ...]:
     index = STAGES.index(stage)
-    fields = SHARED_FIELDS + tuple(
+    return SHARED_FIELDS + tuple(
         field for current_stage in STAGES[:index + 1] for field in STAGE_FIELDS[current_stage]
     )
-    return {key: settings[key] for key in fields if key in settings}
 
 
 def candidate_asset(db: Session, candidate: AppearanceCandidate) -> MediaAsset | None:
@@ -100,6 +108,7 @@ def read_appearance(db: Session, character_id: str) -> dict:
                 candidates.append({
                     "id": candidate.id, "stage": candidate.stage, "url": asset.url,
                     "current": candidate_is_current(appearance, candidate),
+                    "created_at": candidate.created_at.replace(tzinfo=timezone.utc).isoformat(),
                 })
     configuration_error = image_configuration_error()
     return {
@@ -128,14 +137,32 @@ def select_candidate(db: Session, character_id: str, stage: str, candidate_id: s
     candidate = db.get(AppearanceCandidate, candidate_id)
     if not candidate or candidate.character_id != character_id or candidate.stage != stage:
         raise HTTPException(404, "Вариант изображения не найден.")
+    if candidate_asset(db, candidate) is None:
+        raise HTTPException(409, "Изображение варианта больше недоступно.")
+    snapshot = candidate.input_context.get("settings")
+    if not isinstance(snapshot, dict):
+        raise HTTPException(409, "Параметры этого варианта недоступны.")
+    fields = settings_fields(stage)
+    restored = {key: value for key, value in appearance.settings.items() if key not in fields}
+    restored.update({key: value for key, value in snapshot.items() if key in fields})
+    try:
+        restored = AppearanceSettings.model_validate(restored).model_dump(exclude_none=True)
+    except ValidationError:
+        raise HTTPException(409, "Параметры этого варианта недоступны.")
+    selections = dict(appearance.selections)
+    references = candidate.input_context.get("references", {})
+    if not isinstance(references, dict):
+        raise HTTPException(409, "Референсы этого варианта недоступны.")
     for prior in STAGES[:STAGES.index(stage)]:
-        if not appearance.selections.get(prior):
-            raise HTTPException(409, "Сначала выберите вариант предыдущего этапа.")
-    if not candidate_is_current(appearance, candidate) or candidate_asset(db, candidate) is None:
-        raise HTTPException(409, "Этот вариант создан с другими параметрами этапа.")
-    if appearance.selections.get(stage) != candidate_id:
-        selections = dict(appearance.selections)
-        selections[stage] = candidate_id
+        prior_id = references.get(prior)
+        prior_candidate = db.get(AppearanceCandidate, prior_id) if isinstance(prior_id, str) else None
+        if (not prior_candidate or prior_candidate.character_id != character_id
+                or prior_candidate.stage != prior or candidate_asset(db, prior_candidate) is None):
+            raise HTTPException(409, "Референс предыдущего этапа больше недоступен.")
+        selections[prior] = prior_id
+    selections[stage] = candidate_id
+    if appearance.settings != restored or appearance.selections != selections:
+        appearance.settings = restored
         appearance.selections = selections
         commit_appearance(db)
     return read_appearance(db, character_id)

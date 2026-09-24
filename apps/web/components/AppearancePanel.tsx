@@ -123,9 +123,11 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
   const changed = !!appearance && (JSON.stringify(settings) !== JSON.stringify(appearance.settings)
     || JSON.stringify(counts) !== JSON.stringify(appearance.counts));
   const needsGenderConfirmation = !!settings.gender && settings.gender !== character.gender;
-  const candidates = appearance?.candidates.filter((candidate) => candidate.stage === stage
-    && (candidate.current || appearance.selections[stage] === candidate.id)) ?? [];
   const latestJob = appearance?.jobs.find((job) => job.stage === stage);
+  const latestIds = new Set(latestJob?.outputs.map((item) => item.candidate_id).filter((id): id is string => !!id) ?? []);
+  const stageCandidates = appearance?.candidates.filter((candidate) => candidate.stage === stage) ?? [];
+  const latestCandidates = stageCandidates.filter((candidate) => latestIds.has(candidate.id));
+  const previousCandidates = stageCandidates.filter((candidate) => !latestIds.has(candidate.id)).reverse();
   const stageReady = stage === "face" || (stage === "body" ? !!appearance?.selections.face : !!appearance?.selections.face && !!appearance?.selections.body);
   const needsFaceAdjustmentChoice = stage === "body" && (settings.body_type === "full" || settings.body_type === "fat")
     && !settings.face_adjustment;
@@ -180,6 +182,29 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось выполнить действие.");
     } finally { setBusy(false); }
+  }
+
+  function candidateCards(items: CharacterAppearance["candidates"], previous = false) {
+    return <div className="appearance-candidates">{items.map((candidate, index) => {
+      const alt = `${stages.find(({ id }) => id === stage)?.label}, ${previous ? "предыдущий" : "новый"} вариант ${index + 1}`;
+      const selected = appearance?.selections[stage] === candidate.id;
+      return <article key={candidate.id} className="appearance-candidate" aria-current={selected}>
+        <button className="appearance-image-button" type="button" disabled={locked} onClick={() => setPreview({ url: candidate.url, alt })}>
+          <img src={getApiAssetUrl(candidate.url)} alt={alt} /><span>Увеличить</span>
+        </button>
+        {previous && <span className="muted">{new Date(candidate.created_at).toLocaleString("ru-RU")}</span>}
+        {!candidate.current && <span className="muted">При выборе восстановятся параметры и референсы этого варианта</span>}
+        <button className="secondary-button" type="button" aria-pressed={selected} disabled={locked || (selected && candidate.current)} onClick={() => {
+          if (!appearance) return;
+          if (!candidate.current && changed && !window.confirm("Несохранённые изменения параметров будут заменены параметрами выбранного варианта. Продолжить?")) return;
+          void action(() => selectAppearanceCandidate(character.id, stage, candidate.id, appearance.revision),
+            candidate.current ? "Вариант выбран." : "Прежний вариант и его параметры восстановлены. Для применения сохраните образ.",
+            false, candidate.current);
+        }}>
+          {selected && candidate.current ? "Выбран" : candidate.current ? "Выбрать" : "Восстановить"}
+        </button>
+      </article>;
+    })}</div>;
   }
 
   const detailsKey = `${stage}_details` as "face_details" | "body_details" | "clothing_details";
@@ -298,20 +323,15 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
             {retryCount > 0 && !["queued", "running"].includes(latestJob.status) && <button className="secondary-button" type="button" disabled={locked || changed || !appearance.generation_available} onClick={() => void generate(latestJob)}>Повторить только неполученные ({retryCount})</button>}
           </div>}
           {stage !== "face" && !stageReady && <p className="muted">Для этого этапа сначала выберите {stage === "body" ? "лицо" : "лицо и фигуру"}.</p>}
-          {candidates.length > 0 && <div className="appearance-candidates">
-            {candidates.map((candidate, index) => {
-              const alt = `${stages.find(({ id }) => id === stage)?.label}, вариант ${index + 1}`;
-              return <article key={candidate.id} className="appearance-candidate" aria-current={appearance.selections[stage] === candidate.id}>
-                <button className="appearance-image-button" type="button" disabled={locked} onClick={() => setPreview({ url: candidate.url, alt })}>
-                  <img src={getApiAssetUrl(candidate.url)} alt={alt} /><span>Увеличить</span>
-                </button>
-                {!candidate.current && <span className="muted">Создан с прежними параметрами</span>}
-                <button className="secondary-button" type="button" aria-pressed={appearance.selections[stage] === candidate.id} disabled={locked || !candidate.current} onClick={() => void action(() => selectAppearanceCandidate(character.id, stage, candidate.id, appearance.revision), "Вариант выбран.", false, true)}>
-                  {appearance.selections[stage] === candidate.id ? "Выбран" : "Выбрать"}
-                </button>
-              </article>;
-            })}
-          </div>}
+          {latestCandidates.length > 0 && <section className="stack" aria-label="Последние варианты">
+            <strong>Последние варианты</strong>
+            {candidateCards(latestCandidates)}
+          </section>}
+          {previousCandidates.length > 0 && <details className="appearance-history" open>
+            <summary>Предыдущие варианты ({previousCandidates.length})</summary>
+            <p className="muted">Здесь доступны все ранее созданные варианты этого этапа. Выбор варианта с прежними параметрами восстановит их и связанные референсы.</p>
+            {candidateCards(previousCandidates, true)}
+          </details>}
           {selectedCount > 0 && needsGenderConfirmation && <label>
             <input type="checkbox" checked={confirmGender} disabled={busy} onChange={(event) => setConfirmGender(event.target.checked)} /> Изменить пол в профиле персонажа при сохранении образа. Несовместимый голос будет сброшен.
           </label>}
