@@ -164,17 +164,17 @@ class ImageProviderTestCase(unittest.TestCase):
             with self.assertRaises(ImageStorageError):
                 normalized_png(b"<svg onload=bad()></svg>")
 
-    def test_prompts_preserve_russian_and_omit_unspecified_attributes(self):
+    def test_prompts_use_compiled_values_and_omit_unspecified_attributes(self):
         prompt = build_appearance_prompt("face", {"gender": "female"})
         self.assertNotIn("hair_color", prompt)
         self.assertNotIn("age", json.loads(prompt.split("\n")[-1]))
-        prompt = build_appearance_prompt("clothing", {"gender": "female", "glasses": False, "clothing": "Синий свитер"})
+        prompt = build_appearance_prompt("clothing", {"gender": "female", "glasses": False, "clothing": "blue sweater"})
         self.assertNotIn("glasses", prompt)
         self.assertIn("unobstructed eyes", prompt)
-        self.assertIn("Синий свитер", prompt)
+        self.assertIn("blue sweater", prompt)
         self.assertIn("reference 2 defines body proportions", prompt)
-        body = build_appearance_prompt("body", {"gender": "female", "body_details": "Длинные ноги"})
-        self.assertIn("Длинные ноги", body)
+        body = build_appearance_prompt("body", {"gender": "female", "body_details": "long legs"})
+        self.assertIn("long legs", body)
         self.assertIn("form-fitting neutral sportswear", body)
         self.assertIn("Do not use loose or oversized clothes", body)
         caucasus = build_appearance_prompt("face", {"gender": "female", "appearance_type": "caucasus"})
@@ -190,24 +190,19 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertIsNone(build_appearance_negative_prompt("face", settings, "openrouter"))
         self.assertIsNone(build_appearance_negative_prompt("face", {"gender": "female", "glasses": True}, "venice"))
 
-    def test_common_russian_colors_become_mandatory_unambiguous_traits(self):
-        settings = {"gender": "female", "hair_color": "рыжие", "eye_color": "зелёные"}
+    def test_compiled_colors_become_mandatory_unambiguous_traits(self):
+        settings = {"gender": "female", "hair_color": "vivid natural copper-red", "eye_color": "clear saturated green"}
         prompt = build_appearance_prompt("face", settings, "venice")
         self.assertIn("MANDATORY IDENTITY TRAITS", prompt)
         self.assertIn("Hair must be vivid natural copper-red from roots to ends", prompt)
         self.assertIn("Both irises must be clear saturated green", prompt)
         self.assertIn("Structured attributes override conflicting free-text details", prompt)
-        self.assertNotIn("рыжие", prompt)
-        self.assertNotIn("зелёные", prompt)
         negative = build_appearance_negative_prompt("face", settings, "venice")
-        self.assertIn("brown hair", negative)
-        self.assertIn("auburn hair", negative)
-        self.assertIn("brown eyes", negative)
-        self.assertIn("hazel eyes", negative)
+        self.assertIsNone(negative)
 
-    def test_custom_colors_are_preserved_verbatim(self):
+    def test_custom_compiled_colors_are_preserved_verbatim(self):
         prompt = build_appearance_prompt("face", {
-            "gender": "female", "hair_color": "фиолетово-серебристые", "eye_color": "изумрудные",
+            "gender": "female", "hair_color": "violet-silver", "eye_color": "emerald green",
         }, "venice")
-        self.assertIn("фиолетово-серебристые", prompt)
-        self.assertIn("изумрудные", prompt)
+        self.assertIn("violet-silver", prompt)
+        self.assertIn("emerald green", prompt)

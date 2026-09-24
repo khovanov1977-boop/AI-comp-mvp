@@ -89,7 +89,7 @@ class VeniceImageTestCase(unittest.TestCase):
                 self.assertNotIn("private-test-key", json.dumps(caught.exception.diagnostic))
 
     def test_clothing_prompt_matches_single_reference(self):
-        prompt = build_appearance_prompt("clothing", {"gender": "female", "clothing": "красное платье"}, "venice")
+        prompt = build_appearance_prompt("clothing", {"gender": "female", "clothing": "red dress"}, "venice")
         self.assertIn("selected body image", prompt)
         self.assertNotIn("reference 2", prompt)
 

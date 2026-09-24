@@ -43,11 +43,18 @@ def commit_appearance(db: Session) -> None:
 
 def stage_context(appearance: CharacterAppearance, stage: str) -> dict:
     index = STAGES.index(stage)
-    fields = SHARED_FIELDS + STAGE_FIELDS[stage]
     return {
-        "settings": {key: appearance.settings[key] for key in fields if key in appearance.settings},
+        "settings": stage_settings(appearance.settings, stage),
         "references": {name: appearance.selections.get(name) for name in STAGES[:index]},
     }
+
+
+def stage_settings(settings: dict, stage: str) -> dict:
+    index = STAGES.index(stage)
+    fields = SHARED_FIELDS + tuple(
+        field for current_stage in STAGES[:index + 1] for field in STAGE_FIELDS[current_stage]
+    )
+    return {key: settings[key] for key in fields if key in settings}
 
 
 def candidate_asset(db: Session, candidate: AppearanceCandidate) -> MediaAsset | None:

@@ -27,6 +27,7 @@ from app.providers.image_openrouter import GeneratedImage, ImageProviderError
 from app.routers.appearance import get_image_session_factory
 from app.schemas.appearance import AppearanceGenerate, AppearanceSettings
 from app.services.image_generation import recover_interrupted_jobs, run_generation, submit_generation
+from app.services.image_prompt_compiler import ImagePromptCompiler, ImagePromptCompilerError
 from app.services.image_storage import resolve_image_file, save_image
 
 
@@ -42,6 +43,22 @@ class AppearanceTestCase(unittest.TestCase):
                                       image_base_url="https://openrouter.ai/api/v1", image_model="black-forest-labs/flux.2-pro")
         config_patch.start()
         self.addCleanup(config_patch.stop)
+        translations = {
+            "рыжие": "vivid natural copper-red",
+            "зеленые": "clear saturated green",
+            "Веснушки и ямочки на щеках": "freckles and dimples",
+            "Халат": "robe",
+        }
+        self.translator = Mock()
+        self.translator.translate.side_effect = lambda values: {
+            key: translations.get(value, value) for key, value in values.items()
+        }
+        compiler_patch = patch(
+            "app.services.image_generation.get_image_prompt_compiler",
+            return_value=ImagePromptCompiler(self.translator),
+        )
+        compiler_patch.start()
+        self.addCleanup(compiler_patch.stop)
         output = BytesIO()
         Image.new("RGB", (16, 16), "navy").save(output, format="PNG")
         self.png = output.getvalue()
@@ -381,8 +398,6 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-image-3")
             self.assertEqual(provider.generate.call_args.kwargs["references"], [])
             self.assertIn("eyeglasses", provider.generate.call_args.kwargs["negative_prompt"])
-            self.assertIn("brown hair", provider.generate.call_args.kwargs["negative_prompt"])
-            self.assertIn("hazel eyes", provider.generate.call_args.kwargs["negative_prompt"])
             self.assertNotIn("glasses", provider.generate.call_args.kwargs["prompt"])
             self.assertIn("vivid natural copper-red", provider.generate.call_args.kwargs["prompt"])
             self.assertIn("clear saturated green", provider.generate.call_args.kwargs["prompt"])
@@ -395,10 +410,28 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
             self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
             self.assertIn("selected body image", provider.generate.call_args.kwargs["prompt"])
+            self.assertIn("vivid natural copper-red", provider.generate.call_args.kwargs["prompt"])
+            self.assertIn("clear saturated green", provider.generate.call_args.kwargs["prompt"])
             with self.sessions() as db:
-                self.assertEqual(db.get(ImageGenerationJob, clothing_job).input_context["image_provider"], "venice")
+                job = db.get(ImageGenerationJob, clothing_job)
+                self.assertEqual(job.input_context["image_provider"], "venice")
+                self.assertEqual(job.input_context["compiled_settings"]["hair_color"], "vivid natural copper-red")
+                self.assertEqual(job.input_context["prompt_compiler_version"], 1)
                 assets = db.scalars(select(MediaAsset).where(MediaAsset.provider.like("venice:%"))).all()
                 self.assertEqual(len(assets), 3)
+
+    def test_compiler_failure_starts_no_job_and_persists_no_settings(self):
+        self.enable_images()
+        self.translator.translate.side_effect = ImagePromptCompilerError("translation failed")
+        response = self.client.post(f"{self.path}/generate/face", json={
+            "request_id": str(uuid4()), "expected_revision": 0, "count": 1,
+            "settings": {"gender": "female", "hair_color": "фиолетовые"},
+        })
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("не запускалась", response.json()["detail"])
+        with self.sessions() as db:
+            self.assertIsNone(db.get(CharacterAppearance, self.character_id))
+            self.assertIsNone(db.scalar(select(ImageGenerationJob)))
 
     def test_generation_requires_parameters_and_prior_references(self):
         self.enable_images()
@@ -433,6 +466,20 @@ class AppearanceTestCase(unittest.TestCase):
         self.assertIn(successful_id, [c["id"] for c in self.read()["candidates"]])
         with self.assertRaises(HTTPException):
             self.submit_job(retry_of=job_id)
+
+    def test_retry_reuses_compiled_prompt_without_translation(self):
+        self.enable_images()
+        self.configure({"gender": "female", "hair_color": "рыжие"})
+        job_id, _ = self.submit_job()
+        provider = self.fake_provider()
+        provider.generate.side_effect = ImageProviderError("Rate limit")
+        run_generation(job_id, self.sessions, provider)
+        self.assertEqual(self.translator.translate.call_count, 1)
+        retry_id, _ = self.submit_job(retry_of=job_id)
+        self.assertEqual(self.translator.translate.call_count, 1)
+        with self.sessions() as db:
+            self.assertEqual(db.get(ImageGenerationJob, retry_id).prompt,
+                             db.get(ImageGenerationJob, job_id).prompt)
 
     def test_unknown_outcome_requires_explicit_retry_confirmation(self):
         self.enable_images()

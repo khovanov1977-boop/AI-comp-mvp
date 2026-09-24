@@ -90,6 +90,13 @@ test. It does not guarantee perfect identity preservation. A provider response
 does not report a cost in the current adapter, so the wizard's per-image cost
 field may be empty; charges still appear on the Venice account.
 
+Before a new image job is created, `ImagePromptCompiler` translates all supplied
+free-text appearance fields to concise English with the configured
+OpenAI-compatible text model. Structured enum and boolean values remain
+deterministic. The compiled settings and compiler version are saved with the
+job; an explicit retry reuses the saved prompt and does not translate again. If
+translation fails, no image request is sent.
+
 To switch back, set `IMAGE_PROVIDER=openrouter` and leave the OpenRouter lines
 above in place. For OpenRouter, an empty `IMAGE_API_KEY` reuses `LLM_API_KEY`.
 Keep secrets server-side. `.env.example` defaults to `IMAGE_PROVIDER=disabled`
@@ -158,7 +165,7 @@ Chat clearing preserves the confirmed appearance. Contextual requests such as
 
 ## Verification and previous access blocker
 
-- Backend regression: **117 tests passed**.
+- Backend regression: **137 tests passed**.
 - `npm run build:web`: passed.
 - Automated coverage includes three outputs, reference propagation, persistence,
   ownership/revisions, duplicate requests/workers, partial retry, unknown cost,

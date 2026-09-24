@@ -19,8 +19,17 @@ from app.models.media_asset import MediaAsset
 from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage
 from app.providers.image_openrouter import ImageProviderError
 from app.schemas.appearance import AppearanceGenerate
-from app.services.appearance_prompt import build_appearance_negative_prompt, build_appearance_prompt
-from app.services.appearance_service import STAGES, candidate_asset, commit_appearance, require_character, require_revision, stage_context
+from app.services.appearance_prompt import build_appearance_negative_prompt
+from app.services.appearance_service import (
+    STAGES,
+    candidate_asset,
+    commit_appearance,
+    require_character,
+    require_revision,
+    stage_context,
+    stage_settings,
+)
+from app.services.image_prompt_compiler import ImagePromptCompilerError, get_image_prompt_compiler
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
 
 # Protect final file/DB writes against same-process character deletion. Never hold
@@ -62,28 +71,46 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         except (ImageStorageError, OSError):
             raise HTTPException(409, "Файл выбранного референса недоступен.") from None
     retry_of = str(payload.retry_of) if payload.retry_of else None
+    provider_name = settings.image_provider
+    model = model_for_stage(stage)
     if not retry_of:
         if payload.settings is None or payload.count is None:
             raise HTTPException(422, "Для новой генерации нужны параметры внешности и количество вариантов.")
+        raw_settings = payload.settings.model_dump(exclude_none=True)
+        context = {
+            "settings": stage_settings(raw_settings, stage),
+            "references": {
+                name: appearance.selections.get(name) for name in STAGES[:STAGES.index(stage)]
+            } if appearance else {},
+        }
+        try:
+            compiled = get_image_prompt_compiler().compile(stage, context["settings"], provider_name)
+        except ImagePromptCompilerError:
+            raise HTTPException(
+                503,
+                "Не удалось подготовить английское описание внешности. Генерация изображения не запускалась.",
+            ) from None
         if appearance is None:
             appearance = CharacterAppearance(character_id=character_id, settings={}, selections={},
                                              counts=dict.fromkeys(STAGES, 1))
             db.add(appearance)
-        appearance.settings = payload.settings.model_dump(exclude_none=True)
+        appearance.settings = raw_settings
         counts = dict(appearance.counts or dict.fromkeys(STAGES, 1))
         counts[stage] = payload.count
         appearance.counts = counts
         commit_appearance(db)
         appearance = db.get(CharacterAppearance, character_id)
+        context = stage_context(appearance, stage)
+        context["compiled_settings"] = compiled.settings
+        context["prompt_compiler_version"] = compiled.version
+        count = payload.count
+        prompt = compiled.prompt
+        negative_prompt = compiled.negative_prompt
     elif appearance is None:
         raise HTTPException(409, "Исходные параметры генерации не найдены.")
-    context = stage_context(appearance, stage)
-    count = appearance.counts[stage]
-    provider_name = settings.image_provider
-    model = model_for_stage(stage)
-    prompt = build_appearance_prompt(stage, context["settings"], provider_name)
-    negative_prompt = build_appearance_negative_prompt(stage, context["settings"], provider_name)
-    if retry_of:
+    else:
+        context = stage_context(appearance, stage)
+        count = appearance.counts[stage]
         parent = db.get(ImageGenerationJob, retry_of)
         if not parent or parent.character_id != character_id or parent.stage != stage:
             raise HTTPException(404, "Исходное задание не найдено.")
@@ -108,6 +135,10 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         negative_prompt = parent.input_context.get("negative_prompt")
         if negative_prompt is None:
             negative_prompt = build_appearance_negative_prompt(stage, context["settings"], provider_name)
+        if "compiled_settings" in parent.input_context:
+            context["compiled_settings"] = deepcopy(parent.input_context["compiled_settings"])
+        if "prompt_compiler_version" in parent.input_context:
+            context["prompt_compiler_version"] = parent.input_context["prompt_compiler_version"]
     context["image_provider"] = provider_name
     if negative_prompt:
         context["negative_prompt"] = negative_prompt
