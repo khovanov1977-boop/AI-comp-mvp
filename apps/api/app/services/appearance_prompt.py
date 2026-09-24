@@ -44,13 +44,16 @@ def build_appearance_prompt(stage: str, settings: dict, provider_name: str = "op
     body_outfit = body_outfits.get(settings.get("gender"), "a fitted sleeveless athletic top and training tights")
     body_gender = GENDERS.get(settings.get("gender"), "")
     body_person = f"{body_gender} person" if body_gender else "person"
-    body_chest = " Keep the chest and torso anatomically male." if settings.get("gender") == "male" else ""
+    body_anatomy = {
+        "female": " Keep the chest, torso, and overall figure anatomically female, while preserving the specified build.",
+        "male": " Keep the chest and torso anatomically male.",
+    }.get(settings.get("gender"), "")
     instructions = {
         "face": "Create a single character portrait, face clearly visible, neutral background. One person, one image, no collage or text.",
         "body": (f"Create a single full-body image of the SAME {body_person} as reference 1. "
                  "Preserve their face, hair, apparent age and visual style. Neutral standing pose and background, "
                  f"head and feet visible. Dress them in plain, non-transparent, form-fitting neutral sportswear: {body_outfit}."
-                 f"{body_chest} Keep the outfit limited to these fitted items so body proportions remain visible. "
+                 f"{body_anatomy} Keep the outfit limited to these fitted items so body proportions remain visible. "
                  "One person, no collage or text."),
         "clothing": "Create a single full-body image of the SAME person: reference 1 defines the face, reference 2 defines body proportions. Preserve their identity, hair, apparent age, figure and visual style. Change the outfit according to the provided clothing description; do not change the person. If clothing is unspecified, choose an outfit. One person, no collage or text.",
     }

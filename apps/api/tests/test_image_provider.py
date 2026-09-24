@@ -193,8 +193,12 @@ class ImageProviderTestCase(unittest.TestCase):
         self.assertNotIn("leggings", male)
         self.assertNotIn("dresses or skirts", male)
         self.assertIn("short fitted sports top and leggings", female)
+        self.assertIn("chest, torso, and overall figure anatomically female", female)
+        self.assertIn("preserving the specified build", female)
         self.assertNotIn("anatomically male", female)
         self.assertIn("fitted sleeveless athletic top and training tights", non_binary)
+        self.assertNotIn("anatomically female", non_binary)
+        self.assertNotIn("anatomically male", non_binary)
 
     def test_no_glasses_uses_venice_negative_prompt_for_face_only(self):
         settings = {"gender": "female", "glasses": False}
