@@ -60,6 +60,28 @@ class SceneImagePromptTest(unittest.TestCase):
         self.assertTrue(is_photo_request("Покажи фотографию, как пьешь чай"))
         self.assertFalse(is_photo_request("Я вчера видел твоё фото"))
 
+    def test_repairs_non_english_or_overlong_scene_before_image_request(self):
+        calls = []
+
+        def handler(request):
+            body = json.loads(request.content)
+            calls.append(body)
+            fields = ({"location": "дома", "activity": "пьет чай", "clothing": "халат " * 40,
+                       "pose": "сидит", "lighting": "утро"} if len(calls) == 1 else
+                      {"location": "at home", "activity": "drinking tea", "clothing": "robe",
+                       "pose": "seated", "lighting": "morning daylight"})
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(fields)}}]})
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        self.addCleanup(client.close)
+        config = Settings(llm_base_url="https://openrouter.ai/api/v1", llm_api_key="test",
+                          llm_model="current/model", image_prompt_models="backup/model")
+        result = SceneImagePromptCompiler(config, client).compile({}, [], "Пришли фото")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("Translate and shorten", calls[1]["messages"][0]["content"])
+        self.assertIn("Clothing: robe", result.prompt)
+        self.assertLessEqual(len(result.prompt), 1500)
+
 
 class SceneImageJobTest(unittest.TestCase):
     def setUp(self):

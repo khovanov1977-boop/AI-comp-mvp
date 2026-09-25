@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { ChatMessage, VoiceUploadConstraints } from "@ai-companion/shared";
 import {
+  ApiError,
   generateVoiceReply,
   getChatHistory,
   getVoiceUploadConstraints,
@@ -212,9 +213,15 @@ export function ChatWindow({
       }
     } catch (caughtError) {
       if (photoRequest) {
-        setPendingPhotoRequest(photoRequest);
         await loadHistory().catch(() => undefined);
-        setError("Не удалось проверить отправку запроса фото. Проверьте статус или повторите с тем же идентификатором — нового задания не будет.");
+        if (caughtError instanceof ApiError && [409, 422, 503].includes(caughtError.status)) {
+          setDraft(text);
+          setPendingPhotoRequest(null);
+          setError(caughtError.message);
+        } else {
+          setPendingPhotoRequest(photoRequest);
+          setError("Не удалось проверить отправку запроса фото. Проверьте статус или повторите с тем же идентификатором — нового задания не будет.");
+        }
       } else {
         await handleSendFailure(caughtError);
       }
@@ -233,6 +240,10 @@ export function ChatWindow({
       await loadHistory();
     } catch (caughtError) {
       await loadHistory().catch(() => undefined);
+      if (caughtError instanceof ApiError && [409, 422, 503].includes(caughtError.status)) {
+        setDraft(pendingPhotoRequest.text);
+        setPendingPhotoRequest(null);
+      }
       setError(caughtError instanceof Error ? caughtError.message : "Не удалось проверить запрос фото.");
     } finally {
       setIsSending(false);
@@ -640,12 +651,12 @@ export function ChatWindow({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Write a message"
-            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone"}
+            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
           />
           <button
             className="secondary-button voice-button"
             type="button"
-            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone"}
+            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
             onClick={startVoiceRecording}
           >
             Voice
@@ -653,7 +664,7 @@ export function ChatWindow({
           <button
             className="button"
             type="submit"
-            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone"}
+            disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
           >
             Send
           </button>
