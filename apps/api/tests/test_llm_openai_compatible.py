@@ -243,6 +243,27 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
         self.assertIn("character_name: Alice", payload["messages"][0]["content"])
         self.assertEqual(payload["messages"][-1], {"role": "user", "content": "How are you?"})
 
+    def test_openrouter_uses_ordered_fallback_models_for_shared_pool_limits(self) -> None:
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(200, json={"model": "backup/one", "choices": [{"message": {
+                "content": json.dumps({"segments": [{"kind": "speech", "text": "Ответ", "audio_cue": "none"}],
+                                       "delivery": {"emotion": "neutral", "pace": "natural", "intensity": "balanced"}})
+            }}]})
+
+        provider = OpenAICompatibleLLMProvider(
+            base_url="https://openrouter.ai/api/v1", api_key="test-key", model="primary/model",
+            fallback_models=("backup/one", "backup/two", "primary/model"),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        reply = provider.generate_reply(make_context())
+        self.assertEqual(reply.segments[0].text, "Ответ")
+        self.assertNotIn("model", captured)
+        self.assertEqual(captured["models"], ["primary/model", "backup/one", "backup/two"])
+        self.assertEqual(captured["provider"], {"require_parameters": True})
+
     def test_missing_config_raises_clear_configuration_error(self) -> None:
         provider = OpenAICompatibleLLMProvider(base_url="", api_key="", model="")
 

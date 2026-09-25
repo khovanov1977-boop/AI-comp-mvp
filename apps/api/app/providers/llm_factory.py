@@ -13,6 +13,7 @@ def get_llm_provider(provider_name: str | None = None) -> LLMProvider:
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key,
             model=settings.llm_model,
+            fallback_models=tuple(model.strip() for model in settings.llm_fallback_models.split(",") if model.strip()),
             timeout_seconds=settings.llm_timeout_seconds,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,

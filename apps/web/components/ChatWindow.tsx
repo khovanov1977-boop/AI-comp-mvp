@@ -37,7 +37,7 @@ function getReplyRevealDelay(reply: string) {
 
 function getFriendlyErrorMessage(message: string) {
   if (message.includes("HTTP 429")) {
-    return "The model is busy right now. Your message was saved; try again in a moment.";
+    return "Провайдеры разговорных моделей временно ограничили частоту запросов. Сообщение сохранено; попробуйте повторить ответ позже.";
   }
   if (message.toLowerCase().includes("timed out")) {
     return "The model took too long to answer. Your message was saved; try again.";

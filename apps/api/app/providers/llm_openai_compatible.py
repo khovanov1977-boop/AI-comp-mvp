@@ -25,6 +25,7 @@ class OpenAICompatibleLLMProvider:
         base_url: str,
         api_key: str,
         model: str,
+        fallback_models: tuple[str, ...] = (),
         timeout_seconds: int = 60,
         temperature: float = 0.3,
         max_tokens: int = 500,
@@ -33,6 +34,7 @@ class OpenAICompatibleLLMProvider:
         self.base_url = base_url.strip()
         self.api_key = api_key.strip()
         self.model = model.strip()
+        self.fallback_models = tuple(item.strip() for item in fallback_models if item.strip())
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -57,6 +59,10 @@ class OpenAICompatibleLLMProvider:
         }
         if "openrouter.ai" in self.base_url.casefold():
             payload["provider"] = {"require_parameters": True}
+            models = list(dict.fromkeys([self.model, *self.fallback_models]))
+            if len(models) > 1:
+                payload.pop("model")
+                payload["models"] = models
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"

@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
+    llm_fallback_models: str = "qwen/qwen3-30b-a3b-instruct-2507,sao10k/l3-lunaris-8b"
     llm_timeout_seconds: int = 60
     llm_temperature: float = 0.3
     llm_max_tokens: int = 500
