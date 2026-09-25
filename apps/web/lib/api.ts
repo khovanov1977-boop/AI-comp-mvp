@@ -285,7 +285,7 @@ export function getCompanionContext(characterId: string) {
   return request<CompanionContext>(`/chat/${characterId}/context`);
 }
 
-export function sendChatMessage(characterId: string, message: string) {
+export function sendChatMessage(characterId: string, message: string, requestId?: string) {
   return request<{
     reply: string;
     character_state: CompanionContext["character_state"];
@@ -293,7 +293,7 @@ export function sendChatMessage(characterId: string, message: string) {
     error_message: string;
   }>("/chat", {
     method: "POST",
-    body: JSON.stringify({ character_id: characterId, message }),
+      body: JSON.stringify({ character_id: characterId, message, request_id: requestId }),
   });
 }
 

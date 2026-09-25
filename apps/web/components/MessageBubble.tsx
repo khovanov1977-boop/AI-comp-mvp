@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@ai-companion/shared";
 import { VoiceMessagePlayer } from "./VoiceMessagePlayer";
+import { getApiAssetUrl } from "../lib/api";
 
 export function MessageBubble({
   message,
@@ -20,6 +21,17 @@ export function MessageBubble({
   onRetryVoiceReply?: (messageId: string) => void;
   onRetryVoiceGeneration?: (messageId: string) => void;
 }) {
+  if (message.message_type === "image") {
+    return (
+      <div className={`bubble ${message.role}`}>
+        {message.image_url ? (
+          <img className="chat-generated-image" src={getApiAssetUrl(message.image_url)} alt="Фото персонажа" />
+        ) : null}
+        <div>{message.content}</div>
+        {message.image_generation_error ? <small>{message.image_generation_error}</small> : null}
+      </div>
+    );
+  }
   if (message.message_type === "voice") {
     return (
       <div className={`bubble ${message.role}`}>

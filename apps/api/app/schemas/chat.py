@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +18,7 @@ class CharacterStateRead(BaseModel):
 class ChatRequest(BaseModel):
     character_id: str
     message: str
+    request_id: UUID | None = None
 
 
 class ChatRetryRequest(BaseModel):
@@ -38,6 +40,9 @@ class MessageRead(BaseModel):
     role: str
     content: str
     message_type: str
+    image_url: str = ""
+    image_generation_status: str = "not_applicable"
+    image_generation_error: str = ""
     audio_url: str = ""
     audio_mime_type: str = ""
     audio_duration_ms: int | None = None

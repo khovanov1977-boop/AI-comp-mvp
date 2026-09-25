@@ -16,6 +16,7 @@ import {
 import { MessageBubble } from "./MessageBubble";
 
 const MIN_REPLY_REVEAL_DELAY_MS = 700;
+const PHOTO_REQUEST_PATTERN = /(?:(?:пришли|пришлите|отправь|отправьте|покажи|покажите|сделай|сделайте|сними|сфотографируй|сфоткай|скинь|хочу|можно|дай).{0,75}(?:фото|фотку|фотографию|снимок|селфи|картинку|изображение)|(?:фото|фотку|фотографию|снимок|селфи).{0,50}(?:пришли|покажи|сделай|скинь)|(?:send|show|take|make).{0,60}(?:photo|picture|selfie|image))/i;
 const MAX_REPLY_REVEAL_DELAY_MS = 4200;
 const DEFAULT_VOICE_CONSTRAINTS: VoiceUploadConstraints = {
   max_duration_ms: 120_000,
@@ -108,6 +109,7 @@ export function ChatWindow({
   const [retryVoiceReplyMessageId, setRetryVoiceReplyMessageId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
+  const [pendingPhotoRequest, setPendingPhotoRequest] = useState<{ text: string; id: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -125,9 +127,19 @@ export function ChatWindow({
   useEffect(() => {
     setError("");
     setCanRetry(false);
+    setPendingPhotoRequest(null);
     loadHistory().catch(() => setError("Could not load chat history."));
     getVoiceUploadConstraints().then(setVoiceConstraints).catch(() => undefined);
   }, [characterId, historyRevision]);
+
+  useEffect(() => {
+    if (!messages.some((message) => message.message_type === "image" &&
+      ["queued", "running"].includes(message.image_generation_status))) return;
+    const timer = window.setInterval(() => {
+      loadHistory().catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [messages, characterId]);
 
   useEffect(() => {
     return () => {
@@ -184,15 +196,44 @@ export function ChatWindow({
     setError("");
     setCanRetry(false);
     setRetryVoiceReplyMessageId(null);
+    const photoRequest = PHOTO_REQUEST_PATTERN.test(text) ? { text, id: createUploadId() } : null;
     try {
-      const response = await sendChatMessage(characterId, text);
-      await finishSuccessfulReply(response.reply);
+      const response = await sendChatMessage(characterId, text, photoRequest?.id);
+      setPendingPhotoRequest(null);
+      if (photoRequest) {
+        await loadHistory();
+        onAfterSend?.();
+      } else {
+        await finishSuccessfulReply(response.reply);
+      }
       if (response.error_message) {
         setError(response.error_message);
         setCanRetry(response.error_type.startsWith("llm_") || response.error_type === "chat_error");
       }
     } catch (caughtError) {
-      await handleSendFailure(caughtError);
+      if (photoRequest) {
+        setPendingPhotoRequest(photoRequest);
+        await loadHistory().catch(() => undefined);
+        setError("Не удалось проверить отправку запроса фото. Проверьте статус или повторите с тем же идентификатором — нового задания не будет.");
+      } else {
+        await handleSendFailure(caughtError);
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function retryPendingPhoto() {
+    if (!pendingPhotoRequest) return;
+    setIsSending(true);
+    setError("");
+    try {
+      await sendChatMessage(characterId, pendingPhotoRequest.text, pendingPhotoRequest.id);
+      setPendingPhotoRequest(null);
+      await loadHistory();
+    } catch (caughtError) {
+      await loadHistory().catch(() => undefined);
+      setError(caughtError instanceof Error ? caughtError.message : "Не удалось проверить запрос фото.");
     } finally {
       setIsSending(false);
     }
@@ -540,7 +581,11 @@ export function ChatWindow({
       {error ? (
         <div className="chat-error">
           <p>{error}</p>
-          {retryVoiceReplyMessageId ? (
+          {pendingPhotoRequest ? (
+            <button className="text-button" type="button" onClick={retryPendingPhoto} disabled={isSending}>
+              Проверить / повторить отправку фото
+            </button>
+          ) : retryVoiceReplyMessageId ? (
             <button
               className="text-button"
               type="button"

@@ -8,6 +8,7 @@ from app.models.appearance import AppearanceCandidate, CharacterAppearance, Imag
 from app.models.media_asset import IdentityReference, MediaAsset
 from app.models.memory import Memory
 from app.models.message import Message
+from app.models.scene_image import SceneImageJob
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdate
 from app.services.scene_service import DEFAULT_SCENE
@@ -129,7 +130,7 @@ def delete_character(character_id: str, db: Session = Depends(get_db)) -> dict[s
         if not character:
             raise HTTPException(status_code=404, detail="Character not found")
         delete_character_voice_files(character_id)
-        for dependent_model in (Message, Memory, ImageGenerationJob, AppearanceCandidate, CharacterAppearance, MediaAsset, IdentityReference):
+        for dependent_model in (SceneImageJob, Message, Memory, ImageGenerationJob, AppearanceCandidate, CharacterAppearance, MediaAsset, IdentityReference):
             db.execute(delete(dependent_model).where(dependent_model.character_id == character_id))
         db.delete(character)
         db.commit()

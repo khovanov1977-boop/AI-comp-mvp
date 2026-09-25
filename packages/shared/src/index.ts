@@ -102,7 +102,10 @@ export type ChatMessage = {
   character_id: string;
   role: "user" | "assistant";
   content: string;
-  message_type: "text" | "voice" | "image" | "video";
+    message_type: "text" | "voice" | "image" | "video";
+    image_url: string;
+    image_generation_status: "not_applicable" | "queued" | "running" | "completed" | "failed" | "unknown" | "not_started";
+    image_generation_error: string;
   audio_url: string;
   audio_mime_type: string;
   audio_duration_ms: number | null;

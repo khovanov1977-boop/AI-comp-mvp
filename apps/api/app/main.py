@@ -11,6 +11,7 @@ from app.schema_sync import ensure_dev_schema
 from app.services.voice_storage import VOICE_STORAGE_ROOT
 from app.services.image_storage import IMAGE_STORAGE_ROOT
 from app.services.image_generation import recover_interrupted_jobs
+from app.services.scene_image_generation import recover_interrupted_scene_images
 
 app = FastAPI(title="AI Companion API", version="0.0.1")
 
@@ -57,6 +58,7 @@ def on_startup() -> None:
     IMAGE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         recover_interrupted_jobs(db)
+        recover_interrupted_scene_images(db)
 
 
 app.include_router(health.router)

@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models.character import Character
 from app.models.memory import Memory
 from app.models.message import Message
+from app.models.scene_image import SceneImageJob
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
 from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
 from app.schemas.chat import (
@@ -27,6 +28,8 @@ from app.routers.characters import to_character_read
 from app.schemas.llm import CharacterReply
 from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
+from app.services.scene_image_generation import is_photo_request, run_scene_image, submit_scene_image
+from app.services.image_generation import IMAGE_COMMIT_LOCK
 from app.services.scene_service import get_or_create_scene
 from app.services.voice_intent import should_generate_voice_reply
 from app.services.voice_service import attach_prepared_character_voice, prepare_character_voice
@@ -34,6 +37,10 @@ from app.services.voice_storage import VoiceStorageError, delete_voice_file
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 MEMORY_CONTEXT_LIMIT = 8
+
+
+def get_scene_image_session_factory():
+    return SessionLocal
 
 
 def attach_requested_voice(
@@ -148,11 +155,13 @@ def clear_chat_history(character_id: str, db: Session = Depends(get_db)) -> Chat
     for audio_url in audio_urls:
         delete_voice_file(audio_url)
 
-    delete_result = db.execute(delete(Message).where(Message.character_id == character_id))
+    with IMAGE_COMMIT_LOCK:
+        db.execute(delete(SceneImageJob).where(SceneImageJob.character_id == character_id))
+        delete_result = db.execute(delete(Message).where(Message.character_id == character_id))
+        db.commit()
     preserved_memories = db.scalar(
         select(func.count()).select_from(Memory).where(Memory.character_id == character_id)
     )
-    db.commit()
     return ChatHistoryClearRead(
         status="cleared",
         character_id=character_id,
@@ -205,10 +214,25 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
 
 
 @router.post("", response_model=ChatResponse)
-def post_chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+def post_chat(payload: ChatRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+              image_session_factory=Depends(get_scene_image_session_factory)) -> ChatResponse:
     character = db.get(Character, payload.character_id)
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
+
+    if is_photo_request(payload.message):
+        if payload.request_id is None:
+            raise HTTPException(422, "Для запроса фото нужен идентификатор request_id.")
+        job, created = submit_scene_image(db, character, payload.message, payload.request_id)
+        if created:
+            background_tasks.add_task(run_scene_image, job.id, image_session_factory)
+        return ChatResponse(
+            reply="Готовлю фото…" if job.status in {"queued", "running"} else "Статус фото обновлён.",
+            character_state=CharacterStateRead(
+                mood=character.state.mood, trust_level=character.state.trust_level,
+                attachment_level=character.state.attachment_level, energy_level=character.state.energy_level,
+            ),
+        )
 
     try:
         reply, assistant_message, reply_plan = handle_chat_message(db, character, payload.message)

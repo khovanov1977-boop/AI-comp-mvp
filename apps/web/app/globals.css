@@ -267,6 +267,14 @@ select {
   background: var(--assistant);
 }
 
+.chat-generated-image {
+  display: block;
+  width: min(100%, 420px);
+  height: auto;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
 .typing-indicator {
   align-self: flex-start;
   border: 1px solid var(--line);
