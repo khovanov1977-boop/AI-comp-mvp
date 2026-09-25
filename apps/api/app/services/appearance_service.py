@@ -126,6 +126,7 @@ def read_appearance(db: Session, character_id: str) -> dict:
         "image_provider": settings.image_provider,
         "image_model": model_for_stage("face"),
         "image_edit_model": model_for_stage("body"),
+        "image_clothing_model": model_for_stage("clothing"),
         "jobs": [job_read(job) for job in jobs],
     }
 

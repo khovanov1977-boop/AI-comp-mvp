@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     image_base_url: str = "https://openrouter.ai/api/v1"
     image_api_key: str = ""
     image_model: str = ""
+    grok_image_model: str = "x-ai/grok-imagine-image-2.0"
     image_timeout_seconds: int = 180
     venice_api_key: str = ""
     venice_image_model: str = "qwen-image-3"

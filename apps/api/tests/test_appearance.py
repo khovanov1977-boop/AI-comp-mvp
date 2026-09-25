@@ -505,6 +505,58 @@ class AppearanceTestCase(unittest.TestCase):
                 assets = db.scalars(select(MediaAsset).where(MediaAsset.provider.like("venice:%"))).all()
                 self.assertEqual(len(assets), 3)
 
+    def test_hybrid_routes_each_appearance_stage_to_the_requested_provider(self):
+        self.configure({"gender": "female", "glasses": False})
+        self.complete()
+        with patch.multiple(settings, image_provider="hybrid", llm_api_key="unit-test-openrouter-key",
+                            venice_api_key="unit-test-venice-key"):
+            state = self.read()
+            self.assertTrue(state["generation_available"])
+            self.assertEqual(state["image_model"], "x-ai/grok-imagine-image-2.0")
+            self.assertEqual(state["image_edit_model"], "x-ai/grok-imagine-image-2.0")
+            self.assertEqual(state["image_clothing_model"], "qwen-edit-uncensored")
+            provider = self.fake_provider()
+            with patch("app.services.image_generation.create_image_provider", return_value=provider) as factory:
+                for stage, expected_provider, expected_model, reference_count in (
+                    ("face", "openrouter", "x-ai/grok-imagine-image-2.0", 0),
+                    ("body", "openrouter", "x-ai/grok-imagine-image-2.0", 1),
+                    ("clothing", "venice", "qwen-edit-uncensored", 1),
+                ):
+                    job_id, _ = self.submit_job(stage)
+                    with self.sessions() as db:
+                        job = db.get(ImageGenerationJob, job_id)
+                        self.assertEqual(job.model, expected_model)
+                        self.assertEqual(job.input_context["image_provider"], expected_provider)
+                    run_generation(job_id, self.sessions)
+                    self.assertEqual(factory.call_args.args[0], expected_provider)
+                    self.assertEqual(provider.generate.call_args.kwargs["model"], expected_model)
+                    self.assertEqual(len(provider.generate.call_args.kwargs["references"]), reference_count)
+            with self.sessions() as db:
+                assets = list(db.scalars(select(MediaAsset).where(MediaAsset.provider.like("%:%"))))
+                self.assertEqual([asset.provider for asset in assets], [
+                    "openrouter:x-ai/grok-imagine-image-2.0",
+                    "openrouter:x-ai/grok-imagine-image-2.0",
+                    "venice:qwen-edit-uncensored",
+                ])
+
+    def test_hybrid_retry_keeps_original_provider_after_mode_change(self):
+        self.configure()
+        with patch.multiple(settings, image_provider="hybrid", llm_api_key="unit-test-openrouter-key",
+                            venice_api_key="unit-test-venice-key"):
+            original_id, _ = self.submit_job("face")
+            failed_provider = self.fake_provider()
+            failed_provider.generate.side_effect = ImageProviderError("Rate limit")
+            run_generation(original_id, self.sessions, failed_provider)
+            with patch.object(settings, "image_provider", "venice"):
+                retry_id, _ = self.submit_job("face", retry_of=original_id)
+                with self.sessions() as db:
+                    retry = db.get(ImageGenerationJob, retry_id)
+                    self.assertEqual(retry.model, "x-ai/grok-imagine-image-2.0")
+                    self.assertEqual(retry.input_context["image_provider"], "openrouter")
+                with patch("app.services.image_generation.create_image_provider", return_value=self.fake_provider()) as factory:
+                    run_generation(retry_id, self.sessions)
+                    factory.assert_called_once_with("openrouter")
+
     def test_compiler_failure_starts_no_job_and_persists_no_settings(self):
         self.enable_images()
         self.translator.translate.side_effect = ImagePromptCompilerError("translation failed")

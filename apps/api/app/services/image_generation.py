@@ -17,7 +17,7 @@ from app.config import settings
 from app.models.appearance import AppearanceCandidate, CharacterAppearance, ImageGenerationJob
 from app.models.character import Character
 from app.models.media_asset import MediaAsset
-from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage
+from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage, provider_for_stage
 from app.providers.image_openrouter import ImageProviderError
 from app.schemas.appearance import AppearanceGenerate
 from app.services.appearance_prompt import build_appearance_negative_prompt
@@ -73,7 +73,7 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         except (ImageStorageError, OSError):
             raise HTTPException(409, "Файл выбранного референса недоступен.") from None
     retry_of = str(payload.retry_of) if payload.retry_of else None
-    provider_name = settings.image_provider
+    provider_name = provider_for_stage(stage)
     model = model_for_stage(stage)
     if not retry_of:
         if payload.settings is None or payload.count is None:

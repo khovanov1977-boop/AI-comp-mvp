@@ -7,7 +7,8 @@ import httpx
 from PIL import Image
 
 from app.config import Settings
-from app.providers.image_backend import image_configuration_error, model_for_stage
+from app.providers.image_backend import create_image_provider, image_configuration_error, model_for_stage, provider_for_stage
+from app.providers.image_openrouter import OpenRouterImageProvider
 from app.providers.image_openrouter import ImageProviderError
 from app.providers.image_venice import VeniceImageProvider
 from app.services.appearance_prompt import build_appearance_prompt
@@ -27,6 +28,17 @@ class VeniceImageTestCase(unittest.TestCase):
         self.assertEqual(model_for_stage("clothing", self.config), "qwen-edit-uncensored")
         self.assertIn("VENICE_API_KEY", image_configuration_error(self.config.model_copy(update={"venice_api_key": ""})))
         self.assertEqual(image_configuration_error(self.config.model_copy(update={"image_provider": "openrouter", "image_model": "flux", "llm_api_key": "key"})), "")
+
+    def test_hybrid_uses_grok_for_face_and_body_and_venice_for_clothing(self):
+        config = self.config.model_copy(update={"image_provider": "hybrid", "llm_api_key": "openrouter-key", "image_model": ""})
+        self.assertEqual(image_configuration_error(config), "")
+        self.assertIsInstance(create_image_provider("openrouter", config), OpenRouterImageProvider)
+        self.assertEqual([provider_for_stage(stage, config) for stage in ("face", "body", "clothing")],
+                         ["openrouter", "openrouter", "venice"])
+        self.assertEqual([model_for_stage(stage, config) for stage in ("face", "body", "clothing")],
+                         ["x-ai/grok-imagine-image-2.0", "x-ai/grok-imagine-image-2.0", "qwen-edit-uncensored"])
+        self.assertIn("VENICE_API_KEY", image_configuration_error(config.model_copy(update={"venice_api_key": ""})))
+        self.assertIn("LLM_API_KEY", image_configuration_error(config.model_copy(update={"llm_api_key": ""})))
 
     def test_create_and_edit_payloads_match_tested_pair(self):
         calls = []
