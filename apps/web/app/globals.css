@@ -352,8 +352,14 @@ select {
 
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
+}
+
+.photo-charge-hint {
+  flex-basis: 100%;
+  color: var(--muted);
 }
 
 .composer input {

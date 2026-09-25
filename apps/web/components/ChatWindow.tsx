@@ -657,6 +657,11 @@ export function ChatWindow({
           >
             Send
           </button>
+          {PHOTO_REQUEST_PATTERN.test(draft) ? (
+            <small className="photo-charge-hint">
+              Фото создаётся через Venice и оплачивается с вашего баланса. Автоматических повторов нет.
+            </small>
+          ) : null}
         </form>
       )}
     </section>
