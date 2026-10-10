@@ -1,6 +1,7 @@
 from app.config import settings
 from app.providers.tts_base import TTSProvider
 from app.providers.tts_openrouter import OpenRouterTTSProvider, TTSConfigurationError
+from app.providers.tts_venice import VeniceTTSProvider
 
 
 def get_tts_provider(provider_name: str | None = None) -> TTSProvider:
@@ -13,5 +14,11 @@ def get_tts_provider(provider_name: str | None = None) -> TTSProvider:
             timeout_seconds=settings.tts_timeout_seconds,
             response_format=settings.tts_response_format,
             pcm_sample_rate_hz=settings.tts_pcm_sample_rate_hz,
+        )
+    if selected_provider == "venice":
+        return VeniceTTSProvider(
+            api_key=settings.venice_api_key,
+            model=settings.venice_tts_model,
+            timeout_seconds=settings.tts_timeout_seconds,
         )
     raise TTSConfigurationError(f"Unsupported TTS provider: {selected_provider}")

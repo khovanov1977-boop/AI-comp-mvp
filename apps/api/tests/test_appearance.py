@@ -475,12 +475,12 @@ class AppearanceTestCase(unittest.TestCase):
         with patch.multiple(settings, image_provider="venice", venice_api_key="unit-test-venice-key"):
             state = self.read()
             self.assertTrue(state["generation_available"])
-            self.assertEqual(state["image_model"], "qwen-image-3")
-            self.assertEqual(state["image_edit_model"], "qwen-edit-uncensored")
+            self.assertEqual(state["image_model"], "grok-imagine-image-2-0")
+            self.assertEqual(state["image_edit_model"], "grok-imagine-image-2-0-edit")
             provider = self.fake_provider()
             face_job, _ = self.submit_job("face")
             run_generation(face_job, self.sessions, provider)
-            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-image-3")
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "grok-imagine-image-2-0")
             self.assertEqual(provider.generate.call_args.kwargs["references"], [])
             self.assertIn("eyeglasses", provider.generate.call_args.kwargs["negative_prompt"])
             self.assertNotIn("glasses", provider.generate.call_args.kwargs["prompt"])
@@ -488,11 +488,11 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertIn("clear saturated green", provider.generate.call_args.kwargs["prompt"])
             body_job, _ = self.submit_job("body")
             run_generation(body_job, self.sessions, provider)
-            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "grok-imagine-image-2-0-edit")
             self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
             clothing_job, _ = self.submit_job("clothing")
             run_generation(clothing_job, self.sessions, provider)
-            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "grok-imagine-image-2-0-edit")
             self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
             self.assertIn("selected body image", provider.generate.call_args.kwargs["prompt"])
             self.assertIn("vivid natural copper-red", provider.generate.call_args.kwargs["prompt"])
@@ -514,13 +514,13 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertTrue(state["generation_available"])
             self.assertEqual(state["image_model"], "x-ai/grok-imagine-image-2.0")
             self.assertEqual(state["image_edit_model"], "x-ai/grok-imagine-image-2.0")
-            self.assertEqual(state["image_clothing_model"], "qwen-edit-uncensored")
+            self.assertEqual(state["image_clothing_model"], "grok-imagine-image-2-0-edit")
             provider = self.fake_provider()
             with patch("app.services.image_generation.create_image_provider", return_value=provider) as factory:
                 for stage, expected_provider, expected_model, reference_count in (
                     ("face", "openrouter", "x-ai/grok-imagine-image-2.0", 0),
                     ("body", "openrouter", "x-ai/grok-imagine-image-2.0", 1),
-                    ("clothing", "venice", "qwen-edit-uncensored", 1),
+                    ("clothing", "venice", "grok-imagine-image-2-0-edit", 1),
                 ):
                     job_id, _ = self.submit_job(stage)
                     with self.sessions() as db:
@@ -536,7 +536,7 @@ class AppearanceTestCase(unittest.TestCase):
                 self.assertEqual([asset.provider for asset in assets], [
                     "openrouter:x-ai/grok-imagine-image-2.0",
                     "openrouter:x-ai/grok-imagine-image-2.0",
-                    "venice:qwen-edit-uncensored",
+                    "venice:grok-imagine-image-2-0-edit",
                 ])
 
     def test_hybrid_retry_keeps_original_provider_after_mode_change(self):

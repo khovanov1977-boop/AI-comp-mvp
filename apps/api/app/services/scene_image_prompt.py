@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+import re
 import unicodedata
 
 import httpx
@@ -10,6 +11,19 @@ from app.config import Settings, settings
 
 FIELDS = ("location", "activity", "clothing", "pose", "lighting")
 PROMPT_LIMIT = 1500
+_CLOTHING_REQUEST = re.compile(
+    r"\b(?:одежд\w*|одет\w*|раздет\w*|голая|голой|голую|обнаж\w*|наг\w*|"
+    r"плать\w*|юбк\w*|рубашк\w*|блузк\w*|брюк\w*|джинс\w*|костюм\w*|"
+    r"свитер\w*|футболк\w*|бель\w*|трус\w*|лифчик\w*|купальник\w*|халат\w*|"
+    r"пальто\w*|куртк\w*|шорт\w*|nude|naked|clothes?|clothing|dress|skirt|"
+    r"shirt|pants|jeans|suit|underwear|swimsuit)\b",
+    re.IGNORECASE,
+)
+_NO_CLOTHING_REQUEST = re.compile(
+    r"\bбез\s+одежды\b(?!\s+под\b)|\b(?:полностью|совсем)\s+гол(?:ая|ой|ую)\b|"
+    r"\b(?:fully\s+nude|completely\s+naked|without\s+clothes)\b",
+    re.IGNORECASE,
+)
 
 
 class SceneImagePromptError(RuntimeError):
@@ -28,7 +42,7 @@ class SceneImagePromptCompiler:
         self.client = client
 
     def compile(self, scene: dict, dialogue: list[dict[str, str]], user_request: str) -> CompiledSceneImagePrompt:
-        if not self.config.llm_base_url.strip() or not self.config.llm_model.strip():
+        if not self.config.effective_llm_base_url or not self.config.effective_llm_model:
             raise SceneImagePromptError("Не настроена модель для подготовки запроса фото.")
         schema = {
             "type": "object",
@@ -37,7 +51,7 @@ class SceneImagePromptCompiler:
             "additionalProperties": False,
         }
         payload = {
-            "model": self.config.llm_model.strip(),
+            "model": self.config.effective_llm_model,
             "messages": [
                 {"role": "system", "content": (
                     "Create a current visual snapshot of the fictional adult character from the current scene and dialogue. "
@@ -63,13 +77,13 @@ class SceneImagePromptCompiler:
                 "json_schema": {"name": "current_photo_scene", "strict": True, "schema": schema},
             },
         }
-        if "openrouter.ai" in self.config.llm_base_url.casefold():
+        if "openrouter.ai" in self.config.effective_llm_base_url.casefold():
             payload["provider"] = {"require_parameters": True}
             fallbacks = [part.strip() for part in self.config.image_prompt_models.split(",") if part.strip()]
             models = list(dict.fromkeys([payload.pop("model"), *fallbacks]))
             payload["models"] = models
-        headers = {"Authorization": f"Bearer {self.config.llm_api_key.strip()}"} if self.config.llm_api_key.strip() else {}
-        url = f"{self.config.llm_base_url.rstrip('/')}/chat/completions"
+        headers = {"Authorization": f"Bearer {self.config.effective_llm_api_key}"} if self.config.effective_llm_api_key else {}
+        url = f"{self.config.effective_llm_base_url.rstrip('/')}/chat/completions"
         resolved = self._request_fields(url, payload, headers)
         if not isinstance(resolved, dict) or set(resolved) != set(FIELDS):
             raise SceneImagePromptError("Модель контекста вернула неполное описание; генерация не запускалась.")
@@ -88,38 +102,64 @@ class SceneImagePromptCompiler:
             if not self._fields_are_english(resolved):
                 raise SceneImagePromptError("Не удалось перевести описание сцены на английский; генерация не запускалась.")
         resolved = {field: resolved[field].strip() for field in FIELDS}
+        latest_request = " ".join(user_request.split())
+        explicit_clothing = bool(_CLOTHING_REQUEST.search(latest_request))
+        no_clothing = explicit_clothing and bool(_NO_CLOTHING_REQUEST.search(latest_request))
+        if explicit_clothing:
+            # The scene model may silently replace an explicit outfit request. Keep the
+            # original request authoritative instead of sending conflicting clothing.
+            resolved["clothing"] = "no clothing" if no_clothing else ""
+        clothing_instruction = (
+            "Clothing: no clothing, fully nude, as requested; do not add an outfit."
+            if no_clothing else
+            "Clothing: follow the latest photo request exactly; do not substitute the reference outfit or an inferred outfit."
+            if explicit_clothing else
+            f"Clothing: {resolved['clothing']}. This clothing instruction overrides the outfit in the reference."
+            if resolved["clothing"] else
+            "Keep the outfit from the reference unless the current scene clearly changed it."
+        )
         parts = [
             "Edit the reference into one realistic photo of the SAME adult person. Preserve recognizable face, hair, "
             "apparent age, skin tone and body proportions. The reference defines identity, not the current setting.",
             f"Location: {resolved['location']}." if resolved["location"] else "",
             f"Current activity: {resolved['activity']}." if resolved["activity"] else "",
-            (f"Clothing: {resolved['clothing']}. This clothing instruction overrides the outfit in the reference."
-             if resolved["clothing"] else "Keep the outfit from the reference unless the current scene clearly changed it."),
+            clothing_instruction,
             f"Pose: {resolved['pose']}." if resolved["pose"] else "",
             f"Lighting: {resolved['lighting']}." if resolved["lighting"] else "",
             "One person, natural anatomy, no collage, text or watermark.",
+            "The latest photo request overrides this scene summary wherever it explicitly specifies a visual detail."
+            if latest_request else "",
+            f"Latest photo request (original wording): {json.dumps(latest_request, ensure_ascii=False)}."
+            if latest_request else "",
         ]
         prompt = " ".join(part for part in parts if part)
         if len(prompt) > PROMPT_LIMIT:
-            raise SceneImagePromptError("Описание сцены превышает лимит Venice; генерация не запускалась.")
+            raise SceneImagePromptError("Описание сцены слишком длинное; создание фото не запускалось.")
         return CompiledSceneImagePrompt(prompt=prompt, resolved=resolved)
 
     def _request_fields(self, url: str, payload: dict, headers: dict[str, str]) -> dict:
-        try:
-            if self.client is not None:
-                response = self.client.post(url, json=payload, headers=headers,
-                                            timeout=self.config.llm_timeout_seconds)
-            else:
-                with httpx.Client(timeout=self.config.llm_timeout_seconds) as client:
-                    response = client.post(url, json=payload, headers=headers)
-        except httpx.HTTPError as exc:
-            raise SceneImagePromptError("Не удалось подготовить запрос фото; генерация не запускалась.") from exc
-        if response.status_code != 200:
-            raise SceneImagePromptError("Модель контекста не подготовила запрос фото; генерация не запускалась.")
-        try:
-            return json.loads(response.json()["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise SceneImagePromptError("Модель контекста вернула некорректное описание; генерация не запускалась.") from exc
+        models = [self.config.effective_llm_model]
+        if self.config.llm_provider.strip().casefold() == "venice":
+            models = list(dict.fromkeys([*models, *self.config.effective_llm_fallback_models]))
+        for model in models:
+            if "models" not in payload:
+                payload["model"] = model
+            try:
+                if self.client is not None:
+                    response = self.client.post(url, json=payload, headers=headers,
+                                                timeout=self.config.llm_timeout_seconds)
+                else:
+                    with httpx.Client(timeout=self.config.llm_timeout_seconds) as client:
+                        response = client.post(url, json=payload, headers=headers)
+                if response.status_code != 200:
+                    continue
+                resolved = json.loads(response.json()["choices"][0]["message"]["content"])
+                if (isinstance(resolved, dict) and set(resolved) == set(FIELDS)
+                        and all(isinstance(resolved[field], str) for field in FIELDS)):
+                    return resolved
+            except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+                continue
+        raise SceneImagePromptError("Модель контекста не подготовила запрос фото; генерация не запускалась.")
 
     @staticmethod
     def _fields_are_english(values: dict) -> bool:

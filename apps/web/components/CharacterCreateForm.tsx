@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { createCharacter, type CharacterCreateInput } from "../lib/api";
+import { createCharacter, publicErrorText, type CharacterCreateInput } from "../lib/api";
 import { PersonalityEqualizer } from "./PersonalityEqualizer";
 import { VoiceSelector } from "./VoiceSelector";
 
@@ -23,6 +23,7 @@ const initialForm: CharacterCreateInput = {
   user_timezone: "",
   user_language: "ru",
   voice_id: "",
+  response_length: "balanced",
   warmth: 50,
   initiative: 50,
   playfulness: 50,
@@ -83,7 +84,7 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           required
           onChange={(voiceId) => update("voice_id", voiceId)}
         />
-        <small className="muted">Temporary Gemini catalog. The voice can be changed later.</small>
+        <small className="muted">Список голосов можно будет изменить позже.</small>
       </div>
       <label className="field">
         <span className="label">Relationship mode</span>
@@ -170,7 +171,7 @@ export function CharacterCreateForm({ onCreated }: { onCreated: () => void }) {
           <option value="en">English</option>
         </select>
       </label>
-      {error ? <p className="muted">{error}</p> : null}
+      {error ? <p className="muted">{publicErrorText(error)}</p> : null}
       <button className="button" type="submit" disabled={isSaving}>
         {isSaving ? "Creating..." : "Create"}
       </button>

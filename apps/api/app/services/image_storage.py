@@ -91,7 +91,7 @@ def delete_character_image_files(character_id: str) -> None:
     if not directory.is_relative_to(IMAGE_STORAGE_ROOT.resolve()) or not directory.is_dir():
         return
     for path in directory.iterdir():
-        if path.is_file() and path.suffix == ".png":
+        if path.is_file() and path.suffix in {".png", ".mp4"}:
             path.unlink(missing_ok=True)
     if not any(directory.iterdir()):
         directory.rmdir()

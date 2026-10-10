@@ -1,5 +1,7 @@
 # AI Companion MVP
 
+The local development Compose file is not a public deployment configuration.
+
 An AI Companion web app with persistent characters, structured roleplay, memory, emotional state, and text and voice conversations.
 
 ## Stack
@@ -8,7 +10,7 @@ An AI Companion web app with persistent characters, structured roleplay, memory,
 - Backend: FastAPI
 - Database: PostgreSQL
 - ORM: SQLAlchemy
-- AI providers: mock or OpenAI-compatible LLM, OpenRouter STT, and OpenRouter TTS
+- AI providers: mock or OpenAI-compatible LLM, plus Venice speech recognition and voice generation
 
 ## Current MVP Capabilities
 
@@ -17,7 +19,7 @@ An AI Companion web app with persistent characters, structured roleplay, memory,
 - Open a character chat
 - Send a text message
 - Record, store, and play user voice messages
-- Transcribe user voice messages through OpenRouter and send them to the character
+- Transcribe user voice messages through Venice and send them to the character
 - Get a structured character response from a mock or configured real LLM
 - Generate character voice replies and retry failed transcription or voice generation
 - Store user and assistant messages in PostgreSQL
@@ -70,18 +72,22 @@ Copy-Item .env.example .env
 
 Skip this command if `.env` already exists.
 
-For the currently recommended hosted LLM baseline, set:
+For the current Venice chat LLM and two ordered backups, set:
 
 ```env
-LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_API_KEY=your_openrouter_key
-LLM_MODEL=mistralai/mistral-small-2603
+LLM_PROVIDER=venice
+VENICE_API_KEY=your_venice_key
+VENICE_LLM_MODEL=gemma-4-uncensored
+VENICE_LLM_FALLBACK_MODELS=venice-uncensored-1-2,venice-uncensored-role-play
+STT_PROVIDER=venice
+VENICE_STT_MODEL=openai/whisper-large-v3
+TTS_PROVIDER=venice
+VENICE_TTS_MODEL=tts-gemini-3-1-flash
 LLM_TEMPERATURE=0.3
 LLM_MAX_TOKENS=500
 ```
 
-When `STT_BASE_URL`, `STT_API_KEY`, `TTS_BASE_URL`, and `TTS_API_KEY` are empty, the speech providers reuse the OpenRouter URL and API key above.
+The same Venice key is used for chat, speech-to-text, and text-to-speech. The existing 21 Gemini voice IDs remain available. Venice speech is returned as MP3; its Whisper transcription endpoint requires a multipart audio-file upload. The image generator is configured separately and is not changed by these settings. The older OpenRouter speech providers remain available by selecting `STT_PROVIDER=openrouter` or `TTS_PROVIDER=openrouter`.
 
 ### 2. Start PostgreSQL
 
@@ -232,7 +238,9 @@ docker compose ps db
 - `GET /chat/{character_id}`
 - `POST /chat`
 - `POST /media/image`
-- `POST /media/video`
+- `POST /video/quote` (актуальная цена Venice без генерации)
+- `POST /video/{character_id}` (создать видео из фото или референсов лица и фигуры)
+- `GET /video/{character_id}/{job_id}` и `POST /video/{character_id}/{job_id}/check`
 - `GET /media/{character_id}`
 - `POST /voice/tts`
 - `POST /voice/messages/{character_id}`
@@ -242,4 +250,5 @@ docker compose ps db
 ## Notes
 
 The backend creates tables automatically on startup for Sprint 0 convenience. A production setup should replace this with migrations.
-Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription and character voice generation use the configured OpenRouter credentials.
+Recorded voice files are stored locally under `apps/api/data/voice` and are excluded from Git. Voice transcription and character voice generation use the configured speech providers; the recommended configuration uses Venice.
+Видео хранится локально под `apps/api/data/media` и создаётся через Venice после подтверждения показанной цены. Для оживления фото и видео с референсами лица и фигуры используется Wan 3.0 Reference. Отправка платного задания не повторяется автоматически; полученный `queue_id` сохраняется для проверки результата.

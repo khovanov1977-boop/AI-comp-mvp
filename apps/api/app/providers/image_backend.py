@@ -9,7 +9,7 @@ def image_configuration_error(config: Settings = settings, provider_name: str | 
     name = provider_name or config.image_provider
     if name == "hybrid":
         if config.grok_image_model.strip() != "x-ai/grok-imagine-image-2.0":
-            return "Для лица и фигуры укажите GROK_IMAGE_MODEL=x-ai/grok-imagine-image-2.0."
+            return "Некорректно настроено создание лица и фигуры."
         openrouter_config = config.model_copy(update={"image_provider": "openrouter", "image_model": config.grok_image_model})
         return openrouter_configuration_error(openrouter_config) or venice_configuration_error(
             config.model_copy(update={"image_provider": "venice"})
@@ -19,7 +19,7 @@ def image_configuration_error(config: Settings = settings, provider_name: str | 
         return openrouter_configuration_error(config.model_copy(update={"image_provider": name, "image_model": model}))
     if name == "venice":
         return venice_configuration_error(config.model_copy(update={"image_provider": name}))
-    return "Генерация выключена. Укажите IMAGE_PROVIDER=hybrid, venice или openrouter в .env."
+    return "Создание изображений не настроено."
 
 
 def provider_for_stage(stage: str, config: Settings = settings) -> str:

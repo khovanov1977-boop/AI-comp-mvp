@@ -1,6 +1,7 @@
 from app.config import settings
 from app.providers.stt_base import STTProvider
 from app.providers.stt_openrouter import OpenRouterSTTProvider, STTConfigurationError
+from app.providers.stt_venice import VeniceSTTProvider
 
 
 def get_stt_provider(provider_name: str | None = None) -> STTProvider:
@@ -10,6 +11,12 @@ def get_stt_provider(provider_name: str | None = None) -> STTProvider:
             base_url=settings.stt_base_url or settings.llm_base_url,
             api_key=settings.stt_api_key or settings.llm_api_key,
             model=settings.stt_model,
+            timeout_seconds=settings.stt_timeout_seconds,
+        )
+    if selected_provider == "venice":
+        return VeniceSTTProvider(
+            api_key=settings.venice_api_key,
+            model=settings.venice_stt_model,
             timeout_seconds=settings.stt_timeout_seconds,
         )
     raise STTConfigurationError(f"Unsupported STT provider: {selected_provider}")

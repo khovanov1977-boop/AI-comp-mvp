@@ -18,6 +18,7 @@ class CharacterCreate(BaseModel):
     language: str = "ru"
     user_nickname: str = ""
     voice_id: str = ""
+    response_length: Literal["brief", "balanced", "detailed"] = "balanced"
     user_city: str = ""
     user_country: str = ""
     user_timezone: str = "Europe/Moscow"
@@ -47,6 +48,7 @@ class CharacterRead(BaseModel):
     language: str
     user_nickname: str
     voice_id: str
+    response_length: Literal["brief", "balanced", "detailed"]
     user_city: str
     user_country: str
     user_timezone: str
@@ -66,6 +68,7 @@ class CharacterUpdate(BaseModel):
     personality_description: str | None = None
     communication_style: str | None = None
     voice_id: str | None = None
+    response_length: Literal["brief", "balanced", "detailed"] | None = None
     warmth: int | None = Field(default=None, ge=0, le=100)
     initiative: int | None = Field(default=None, ge=0, le=100)
     playfulness: int | None = Field(default=None, ge=0, le=100)

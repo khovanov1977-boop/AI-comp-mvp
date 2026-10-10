@@ -9,6 +9,7 @@ from app.models.character import Character
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.scene_image import SceneImageJob
+from app.models.video import VideoJob
 from app.providers.llm_openai_compatible import LLMConfigurationError, LLMProviderError
 from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
 from app.schemas.chat import (
@@ -22,6 +23,7 @@ from app.schemas.chat import (
     MemoryMetaRead,
     MessageRead,
     SceneContextRead,
+    ScenarioIdeasRead,
     UserContextRead,
 )
 from app.routers.characters import to_character_read
@@ -29,8 +31,11 @@ from app.schemas.llm import CharacterReply
 from app.services.memory_service import get_memory_counts_by_category, list_character_memories
 from app.services.orchestrator import handle_chat_message, retry_last_user_message
 from app.services.scene_image_generation import is_photo_request, run_scene_image, submit_scene_image
+from app.services.beta_limits import PAID_SUBMISSION_LOCK
+from app.services.public_errors import unexpected_error_message
 from app.services.image_generation import IMAGE_COMMIT_LOCK
 from app.services.scene_service import get_or_create_scene
+from app.services.scenario_ideas import ScenarioIdeasError, generate_scenario_ideas
 from app.services.voice_intent import should_generate_voice_reply
 from app.services.voice_service import attach_prepared_character_voice, prepare_character_voice
 from app.services.voice_storage import VoiceStorageError, delete_voice_file
@@ -72,13 +77,13 @@ def attach_requested_voice(
         db.rollback()
         db.refresh(message)
         message.voice_generation_status = "failed"
-        message.voice_generation_error = str(exc) or exc.__class__.__name__
+        message.voice_generation_error = unexpected_error_message(exc)
         db.add(message)
         db.commit()
         return (
             "voice_generation_error",
             "Text reply was saved, but voice generation failed: "
-            f"{str(exc) or exc.__class__.__name__}",
+            f"{unexpected_error_message(exc)}",
         )
 
 
@@ -157,6 +162,7 @@ def clear_chat_history(character_id: str, db: Session = Depends(get_db)) -> Chat
 
     with IMAGE_COMMIT_LOCK:
         db.execute(delete(SceneImageJob).where(SceneImageJob.character_id == character_id))
+        db.execute(delete(VideoJob).where(VideoJob.character_id == character_id))
         delete_result = db.execute(delete(Message).where(Message.character_id == character_id))
         db.commit()
     preserved_memories = db.scalar(
@@ -213,6 +219,18 @@ def get_companion_context(character_id: str, db: Session = Depends(get_db)) -> C
     )
 
 
+@router.post("/{character_id}/ideas", response_model=ScenarioIdeasRead)
+def create_scenario_ideas(character_id: str, db: Session = Depends(get_db)) -> ScenarioIdeasRead:
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(404, "Персонаж не найден.")
+    scene = get_or_create_scene(db, character)
+    try:
+        return generate_scenario_ideas(character, scene)
+    except ScenarioIdeasError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
 @router.post("", response_model=ChatResponse)
 def post_chat(payload: ChatRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
               image_session_factory=Depends(get_scene_image_session_factory)) -> ChatResponse:
@@ -223,7 +241,8 @@ def post_chat(payload: ChatRequest, background_tasks: BackgroundTasks, db: Sessi
     if is_photo_request(payload.message):
         if payload.request_id is None:
             raise HTTPException(422, "Для запроса фото нужен идентификатор request_id.")
-        job, created = submit_scene_image(db, character, payload.message, payload.request_id)
+        with PAID_SUBMISSION_LOCK:
+            job, created = submit_scene_image(db, character, payload.message, payload.request_id)
         if created:
             background_tasks.add_task(run_scene_image, job.id, image_session_factory)
         return ChatResponse(
@@ -252,7 +271,7 @@ def post_chat(payload: ChatRequest, background_tasks: BackgroundTasks, db: Sessi
         db.rollback()
         raise HTTPException(
             status_code=503,
-            detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
+            detail={"error": "chat_error", "message": unexpected_error_message(exc)},
         ) from exc
 
     error_type = ""
@@ -318,7 +337,7 @@ def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> Chat
         db.rollback()
         raise HTTPException(
             status_code=503,
-            detail={"error": "chat_error", "message": str(exc) or exc.__class__.__name__},
+            detail={"error": "chat_error", "message": unexpected_error_message(exc)},
         ) from exc
 
     error_type = ""

@@ -5,6 +5,7 @@ from sqlalchemy.engine import Engine
 
 
 PROFILE_COLUMNS = {
+    "response_length": "VARCHAR NOT NULL DEFAULT 'balanced'",
     "voice_id": "VARCHAR NOT NULL DEFAULT ''",
     "biography": "TEXT NOT NULL DEFAULT ''",
     "likes": "TEXT NOT NULL DEFAULT ''",
@@ -50,6 +51,10 @@ MESSAGE_COLUMNS = {
     "image_url": "TEXT NOT NULL DEFAULT ''",
     "image_generation_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",
     "image_generation_error": "TEXT NOT NULL DEFAULT ''",
+    "video_url": "TEXT NOT NULL DEFAULT ''",
+    "video_generation_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",
+    "video_generation_error": "TEXT NOT NULL DEFAULT ''",
+    "video_job_id": "VARCHAR NOT NULL DEFAULT ''",
     "audio_mime_type": "VARCHAR NOT NULL DEFAULT ''",
     "audio_duration_ms": "INTEGER NULL",
     "transcription_status": "VARCHAR NOT NULL DEFAULT 'not_applicable'",

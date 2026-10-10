@@ -651,6 +651,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "emotionality": 30,
                     "rationality": 85,
                     "voice_id": "Iapetus",
+                    "response_length": "detailed",
                 },
             )
             invalid_response = client.patch(f"/characters/{self.character.id}", json={"warmth": 101})
@@ -675,6 +676,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["initiative"], 80)
         self.assertEqual(payload["rationality"], 85)
         self.assertEqual(payload["voice_id"], "Iapetus")
+        self.assertEqual(payload["response_length"], "detailed")
         self.assertEqual(invalid_response.status_code, 422)
         self.assertEqual(invalid_voice_response.status_code, 422)
         self.assertEqual(incompatible_voice_response.status_code, 422)
@@ -685,6 +687,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(updated_character.relationship_mode, "colleague")
         self.assertEqual(updated_character.profile.directness, 90)
         self.assertEqual(updated_character.profile.emotionality, 30)
+        self.assertEqual(updated_character.profile.response_length, "detailed")
+
+        context = build_orchestrator_context(self.db, updated_character, "Расскажи мне историю")
+        prompt = build_provider_prompt(context).system
+        self.assertIn("Selected message length: detailed", prompt)
+        self.assertIn("narrated in third person", prompt)
 
     def test_voice_catalog_contains_curated_options_and_preview_returns_audio(self) -> None:
         def override_get_db():
@@ -1213,6 +1221,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                 profile_columns
             )
         )
+        self.assertIn("response_length", profile_columns)
         user_columns = {column["name"] for column in inspect(legacy_engine).get_columns("users")}
         self.assertTrue(
             {"formal_name", "preferred_name", "casual_name", "vocative_name", "age"}.issubset(user_columns)

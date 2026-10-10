@@ -76,10 +76,7 @@ class OpenAICompatibleLLMProvider:
                 raise LLMProviderError("LLM provider request failed") from exc
 
             if response.status_code != 200:
-                detail = response.text.strip().replace("\n", " ")[:500]
                 message = f"LLM provider returned HTTP {response.status_code}"
-                if detail:
-                    message = f"{message}: {detail}"
                 raise LLMProviderError(message)
 
             try:
@@ -117,9 +114,9 @@ class OpenAICompatibleLLMProvider:
 
     def _validate_config(self) -> None:
         if not self.base_url:
-            raise LLMConfigurationError("LLM_BASE_URL is required for openai_compatible provider")
+            raise LLMConfigurationError("Chat service is not configured")
         if not self.model:
-            raise LLMConfigurationError("LLM_MODEL is required for openai_compatible provider")
+            raise LLMConfigurationError("Chat service is not configured")
 
     def _post_chat_completions(self, payload: dict[str, Any], headers: dict[str, str]) -> httpx.Response:
         url = f"{self.base_url.rstrip('/')}/chat/completions"
@@ -131,10 +128,6 @@ class OpenAICompatibleLLMProvider:
     @staticmethod
     def _format_response_context(data: dict[str, Any], choice: dict[str, Any]) -> str:
         details = []
-        provider = data.get("provider")
-        if isinstance(provider, str) and provider.strip():
-            details.append(f"provider={provider.strip()}")
-
         finish_reason = choice.get("finish_reason")
         if isinstance(finish_reason, str) and finish_reason.strip():
             details.append(f"finish_reason={finish_reason.strip()}")

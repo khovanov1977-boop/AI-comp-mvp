@@ -267,11 +267,11 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
     def test_missing_config_raises_clear_configuration_error(self) -> None:
         provider = OpenAICompatibleLLMProvider(base_url="", api_key="", model="")
 
-        with self.assertRaisesRegex(LLMConfigurationError, "LLM_BASE_URL"):
+        with self.assertRaisesRegex(LLMConfigurationError, "Chat service is not configured"):
             provider.generate_reply(make_context())
 
         provider = OpenAICompatibleLLMProvider(base_url="http://localhost:11434/v1", api_key="", model="")
-        with self.assertRaisesRegex(LLMConfigurationError, "LLM_MODEL"):
+        with self.assertRaisesRegex(LLMConfigurationError, "Chat service is not configured"):
             provider.generate_reply(make_context())
 
     def test_non_200_response_raises_clear_provider_error(self) -> None:
@@ -408,7 +408,7 @@ class OpenAICompatibleProviderTestCase(unittest.TestCase):
 
         message = str(raised.exception)
         self.assertIn("invalid JSON at line 1, column 1", message)
-        self.assertIn("provider=ExampleProvider", message)
+        self.assertNotIn("ExampleProvider", message)
         self.assertIn("finish_reason=stop", message)
 
     def test_schema_validation_error_reports_only_field_path_and_type(self) -> None:

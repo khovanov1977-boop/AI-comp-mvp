@@ -78,15 +78,15 @@ class GeneratedImage:
 
 def image_configuration_error(config: Settings = settings) -> str:
     if config.image_provider != "openrouter":
-        return "Генерация выключена. Укажите IMAGE_PROVIDER=openrouter в .env."
+        return "Создание изображений не настроено."
     if config.image_base_url.rstrip("/") != "https://openrouter.ai/api/v1":
-        return "Для OpenRouter требуется IMAGE_BASE_URL=https://openrouter.ai/api/v1."
+        return "Некорректно настроен сервис создания изображений."
     if not config.image_model.strip():
-        return "Укажите IMAGE_MODEL в .env."
+        return "Не настроен способ создания изображений."
     if not config.effective_image_api_key:
-        return "Нужен существующий LLM_API_KEY или IMAGE_API_KEY для OpenRouter."
+        return "Не настроен доступ к сервису создания изображений."
     if not 10 <= config.image_timeout_seconds <= 600:
-        return "IMAGE_TIMEOUT_SECONDS должен быть от 10 до 600 секунд."
+        return "Некорректно настроено время ожидания создания изображений."
     return ""
 
 
@@ -133,19 +133,19 @@ class OpenRouterImageProvider:
                 if response.status_code >= 400:
                     diagnostic = _error_diagnostic(response, self.api_key)
                     messages = {
-                        400: "OpenRouter отклонил запрос (HTTP 400). Автоповтор отключён; проверьте параметры или повторите только неполученные варианты.",
-                        401: "OpenRouter отклонил API-ключ.",
-                        402: "На счёте OpenRouter недостаточно средств или достигнут лимит ключа.",
-                        403: "OpenRouter отказал в доступе к генерации.",
-                        404: "Модель или Image API недоступны. Проверьте IMAGE_MODEL.",
-                        429: "Достигнут лимит частоты запросов OpenRouter. Автоповтор отключён.",
+                        400: "Запрос изображения отклонён (HTTP 400). Автоповтор отключён; проверьте параметры или повторите только неполученные варианты.",
+                        401: "Не удалось авторизовать создание изображения.",
+                        402: "Недостаточно средств или достигнут лимит ключа.",
+                        403: "Нет доступа к созданию изображения.",
+                        404: "Создание изображения сейчас недоступно.",
+                        429: "Достигнут лимит частоты запросов. Автоповтор отключён.",
                     }
                     raise ImageProviderError(messages.get(response.status_code,
-                        f"OpenRouter вернул ошибку HTTP {response.status_code}. Автоповтор отключён."),
+                        f"Ошибка создания изображения (HTTP {response.status_code}). Автоповтор отключён."),
                         unknown_outcome=response.status_code >= 500,
                         diagnostic=diagnostic)
                 if response.status_code != 200:
-                    raise ImageProviderError("Неожиданный ответ OpenRouter; повтор не выполнен.", unknown_outcome=True)
+                    raise ImageProviderError("Неожиданный ответ при создании изображения; повтор не выполнен.", unknown_outcome=True)
                 chunks, size = [], 0
                 for chunk in response.iter_bytes():
                     size += len(chunk)
@@ -172,6 +172,6 @@ class OpenRouterImageProvider:
         except ImageProviderError:
             raise
         except httpx.RequestError:
-            raise ImageProviderError("Связь с OpenRouter прервана. Результат запроса неизвестен; автоматического повтора нет.", unknown_outcome=True) from None
+            raise ImageProviderError("Связь прервана. Результат запроса неизвестен; автоматического повтора нет.", unknown_outcome=True) from None
         except (ValueError, TypeError, AttributeError, KeyError, binascii.Error):
-            raise ImageProviderError("OpenRouter не вернул корректное изображение. Автоматического повтора нет.", unknown_outcome=True) from None
+            raise ImageProviderError("Не получено корректное изображение. Автоматического повтора нет.", unknown_outcome=True) from None

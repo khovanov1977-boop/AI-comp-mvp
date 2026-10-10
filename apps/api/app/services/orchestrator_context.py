@@ -123,6 +123,7 @@ def build_orchestrator_context(
             likes=profile.likes if profile else "",
             dislikes=profile.dislikes if profile else "",
             language=profile.language if profile else "ru",
+            response_length=profile.response_length if profile else "balanced",
             user_nickname=profile.user_nickname if profile else "",
             warmth=profile.warmth if profile else 50,
             initiative=profile.initiative if profile else 50,

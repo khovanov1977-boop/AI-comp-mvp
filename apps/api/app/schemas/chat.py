@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.character import CharacterRead
 
@@ -32,6 +33,16 @@ class ChatResponse(BaseModel):
     error_message: str = ""
 
 
+class ScenarioIdea(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+    opening_message: str = Field(min_length=1, max_length=300)
+
+
+class ScenarioIdeasRead(BaseModel):
+    ideas: list[ScenarioIdea]
+    source: Literal["model", "local"] = "model"
+
+
 class MessageRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +54,10 @@ class MessageRead(BaseModel):
     image_url: str = ""
     image_generation_status: str = "not_applicable"
     image_generation_error: str = ""
+    video_url: str = ""
+    video_generation_status: str = "not_applicable"
+    video_generation_error: str = ""
+    video_job_id: str = ""
     audio_url: str = ""
     audio_mime_type: str = ""
     audio_duration_ms: int | None = None

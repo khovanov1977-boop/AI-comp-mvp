@@ -5,16 +5,23 @@ import type { FormEvent } from "react";
 import type { ChatMessage, VoiceUploadConstraints } from "@ai-companion/shared";
 import {
   ApiError,
+  checkVideoJob,
   generateVoiceReply,
+  generateScenarioIdeas,
   getChatHistory,
   getVoiceUploadConstraints,
+  publicErrorText,
   retryChatMessage,
   retryVoiceGeneration,
   retryVoiceTranscription,
   sendChatMessage,
   uploadVoiceFile,
+  type VideoMode,
+  type ScenarioIdea,
 } from "../lib/api";
 import { MessageBubble } from "./MessageBubble";
+import { VideoDialog } from "./VideoDialog";
+import { ChatMediaViewer, type ChatMedia } from "./ChatMediaViewer";
 
 const MIN_REPLY_REVEAL_DELAY_MS = 700;
 const PHOTO_REQUEST_PATTERN = /(?:(?:пришли|пришлите|отправь|отправьте|покажи|покажите|сделай|сделайте|сними|сфотографируй|сфоткай|скинь|хочу|можно|дай).{0,75}(?:фото|фотку|фотографию|снимок|селфи|картинку|изображение)|(?:фото|фотку|фотографию|снимок|селфи).{0,50}(?:пришли|покажи|сделай|скинь)|(?:send|show|take|make).{0,60}(?:photo|picture|selfie|image))/i;
@@ -111,6 +118,11 @@ export function ChatWindow({
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const [pendingPhotoRequest, setPendingPhotoRequest] = useState<{ text: string; id: string } | null>(null);
+  const [videoDialog, setVideoDialog] = useState<{ mode: VideoMode; sourceMessageId?: string } | null>(null);
+  const [openedMedia, setOpenedMedia] = useState<ChatMedia | null>(null);
+  const [scenarioIdeas, setScenarioIdeas] = useState<ScenarioIdea[]>([]);
+  const [ideasSource, setIdeasSource] = useState<"model" | "local">("model");
+  const [loadingIdeas, setLoadingIdeas] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -129,13 +141,17 @@ export function ChatWindow({
     setError("");
     setCanRetry(false);
     setPendingPhotoRequest(null);
+    setScenarioIdeas([]);
+    setIdeasSource("model");
+    setOpenedMedia(null);
     loadHistory().catch(() => setError("Could not load chat history."));
     getVoiceUploadConstraints().then(setVoiceConstraints).catch(() => undefined);
   }, [characterId, historyRevision]);
 
   useEffect(() => {
-    if (!messages.some((message) => message.message_type === "image" &&
-      ["queued", "running"].includes(message.image_generation_status))) return;
+    if (!messages.some((message) =>
+      (message.message_type === "image" && ["queued", "running"].includes(message.image_generation_status)) ||
+      (message.message_type === "video" && ["queued", "sending", "processing"].includes(message.video_generation_status)))) return;
     const timer = window.setInterval(() => {
       loadHistory().catch(() => undefined);
     }, 2500);
@@ -559,10 +575,57 @@ export function ChatWindow({
     }
   }
 
+  async function checkVideo(jobId: string) {
+    setError("");
+    try {
+      await checkVideoJob(characterId, jobId);
+      await loadHistory();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось проверить видео.");
+    }
+  }
+
+  async function requestPhotoFromContext() {
+    if (isSending || pendingPhotoRequest || !window.confirm("Создать фото персонажа по текущему контексту чата? Это платный запрос.")) return;
+    const request = { text: "Пришли фото себя по текущему контексту нашего разговора и активной сцены.", id: createUploadId() };
+    setIsSending(true);
+    setError("");
+    try {
+      await sendChatMessage(characterId, request.text, request.id);
+      await loadHistory();
+      onAfterSend?.();
+    } catch (caught) {
+      await loadHistory().catch(() => undefined);
+      if (caught instanceof ApiError && [409, 422, 503].includes(caught.status)) {
+        setError(caught.message);
+      } else {
+        setPendingPhotoRequest(request);
+        setError("Не удалось проверить отправку фото. Проверьте статус или повторите запрос с тем же идентификатором.");
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function requestIdeas() {
+    if (loadingIdeas) return;
+    setLoadingIdeas(true);
+    setError("");
+    try {
+      const generated = await generateScenarioIdeas(characterId);
+      setScenarioIdeas(generated.ideas);
+      setIdeasSource(generated.source);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось предложить идеи.");
+    } finally {
+      setLoadingIdeas(false);
+    }
+  }
+
   return (
     <section>
       <div className="chat-window">
-        {messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
+        {messages.length === 0 ? <p className="muted">Пока нет сообщений. Можно начать самому или выбрать идею для разговора ниже.</p> : null}
         {messages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -579,6 +642,9 @@ export function ChatWindow({
             onRetryVoice={retryVoiceMessage}
             onRetryVoiceReply={retryVoiceReply}
             onRetryVoiceGeneration={retryGeneratedVoice}
+            onAnimatePhoto={(sourceMessageId) => setVideoDialog({ mode: "animate_photo", sourceMessageId })}
+            onCheckVideo={(jobId) => void checkVideo(jobId)}
+            onOpenMedia={setOpenedMedia}
           />
         ))}
         {isSending ? <div className="typing-indicator">Typing...</div> : null}
@@ -589,9 +655,34 @@ export function ChatWindow({
         ) : null}
         <div ref={bottomRef} />
       </div>
+      <div className="chat-video-toolbar">
+        <button className="secondary-button" type="button" onClick={() => void requestIdeas()} disabled={loadingIdeas}>
+          {loadingIdeas ? "Ищу идеи…" : "Идеи для общения"}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => void requestPhotoFromContext()} disabled={isSending || Boolean(pendingPhotoRequest)}>
+          📷 Фото по контексту
+        </button>
+        <button className="secondary-button" type="button" onClick={() => setVideoDialog({ mode: "reference_video" })}>
+          ▶ Создать видео с персонажем
+        </button>
+      </div>
+      {scenarioIdeas.length > 0 && <div className="chat-scenario-ideas" aria-label="Идеи для разговора">
+        {ideasSource === "local" && <small>Языковая модель временно недоступна; пока показаны готовые варианты для этого персонажа.</small>}
+        {scenarioIdeas.map((idea, index) => <button className="secondary-button chat-scenario-card" type="button" key={`${idea.title}-${index}`}
+          onClick={() => { setDraft(idea.opening_message); setScenarioIdeas([]); }}>
+          <strong>{idea.title}</strong><span>{idea.opening_message}</span>
+        </button>)}
+        <small>Выбор идеи только подставит текст в поле ввода — отправьте его, когда будете готовы.</small>
+      </div>}
+      <details className="chat-guide">
+        <summary>Краткий гид по чату</summary>
+        <p>Пишите персонажу обычным текстом или отправляйте голосовое сообщение. В настройках персонажа можно выбрать голос и длину его ответов; в панели сцены — место и формат общения.</p>
+        <p>«Идеи для общения» обращаются к языковой модели и предложат темы, но ничего не отправят за вас. Если модель недоступна, покажем готовые варианты. «Фото по контексту» создаст платное фото по текущей сцене и беседе. Фото можно открыть крупно или оживить кнопкой прямо на нём; отдельное видео создаётся по референсам лица и фигуры. Перед платной генерацией видео показывается цена.</p>
+        <p>Действия и описание сцены в ответах выделяются курсивом. Нажмите на фото или «Открыть видео крупно», чтобы смотреть медиа вне рамки чата.</p>
+      </details>
       {error ? (
         <div className="chat-error">
-          <p>{error}</p>
+          <p>{publicErrorText(error)}</p>
           {pendingPhotoRequest ? (
             <button className="text-button" type="button" onClick={retryPendingPhoto} disabled={isSending}>
               Проверить / повторить отправку фото
@@ -670,11 +761,21 @@ export function ChatWindow({
           </button>
           {PHOTO_REQUEST_PATTERN.test(draft) ? (
             <small className="photo-charge-hint">
-              Фото создаётся через Venice и оплачивается с вашего баланса. Автоматических повторов нет.
+              Фото оплачивается с вашего баланса. Автоматических повторов нет.
             </small>
           ) : null}
         </form>
       )}
+      {videoDialog && <VideoDialog
+        key={`${videoDialog.mode}:${videoDialog.sourceMessageId ?? "new"}`}
+        characterId={characterId}
+        mode={videoDialog.mode}
+        sourceMessageId={videoDialog.sourceMessageId}
+        sourceImageUrl={messages.find((message) => message.id === videoDialog.sourceMessageId)?.image_url}
+        onClose={() => setVideoDialog(null)}
+        onCreated={() => { void loadHistory(); onAfterSend?.(); }}
+      />}
+      {openedMedia && <ChatMediaViewer media={openedMedia} onClose={() => setOpenedMedia(null)} />}
     </section>
   );
 }

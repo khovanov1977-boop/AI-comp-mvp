@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
     "lint": "next lint"
   },
   "dependencies": {
     "@ai-companion/shared": "file:../../packages/shared",
-    "next": "15.1.4",
-    "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "next": "15.5.26",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@types/node": "22.10.5",

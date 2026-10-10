@@ -6,12 +6,19 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.models import *  # noqa: F403
-from app.routers import appearance, characters, chat, debug, health, limits, media, memories, scenes, users, voice
+from app.routers import appearance, characters, chat, debug, health, limits, media, memories, scenes, users, video, voice
 from app.schema_sync import ensure_dev_schema
 from app.services.voice_storage import VOICE_STORAGE_ROOT
 from app.services.image_storage import IMAGE_STORAGE_ROOT
 from app.services.image_generation import recover_interrupted_jobs
 from app.services.scene_image_generation import recover_interrupted_scene_images
+from app.services.video_generation import recover_interrupted_videos
+from app.providers.video_venice import VeniceVideoProvider, VeniceVideoError
+from concurrent.futures import ThreadPoolExecutor
+import logging
+
+_video_recovery_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="video-recovery")
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Companion API", version="0.0.1")
 
@@ -29,9 +36,12 @@ async def return_json_for_unhandled_errors(request: Request, call_next):
     try:
         return await call_next(request)
     except Exception as exc:
+        logger.exception("unhandled_api_error path=%s", request.url.path)
         response = JSONResponse(
             status_code=500,
-            content={"detail": {"error": "unhandled_error", "message": str(exc) or exc.__class__.__name__}},
+            content={"detail": {"error": "unhandled_error", "message": (
+                "Внутренняя ошибка сервера." if settings.beta_safe_errors else str(exc) or exc.__class__.__name__
+            )}},
         )
         origin = request.headers.get("origin")
         if origin in ALLOWED_ORIGINS:
@@ -53,12 +63,28 @@ app.mount("/media-files", StaticFiles(directory=IMAGE_STORAGE_ROOT, check_dir=Fa
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if settings.beta_deployment and (settings.beta_max_image_outputs < 0 or settings.beta_max_video_requests < 0):
+        raise RuntimeError("Beta deployment requires explicit nonnegative paid-request limits")
     Base.metadata.create_all(bind=engine)
     ensure_dev_schema(engine)
     IMAGE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         recover_interrupted_jobs(db)
         recover_interrupted_scene_images(db)
+        pending_videos = recover_interrupted_videos(db)
+    for job_id in pending_videos:
+        _video_recovery_pool.submit(_resume_video, job_id)
+
+
+def _resume_video(job_id: str) -> None:
+    from app.services.video_generation import _poll_video, _set_status
+    try:
+        _poll_video(job_id, SessionLocal, VeniceVideoProvider())
+    except VeniceVideoError as exc:
+        _set_status(job_id, SessionLocal, "unknown", str(exc))
+    except Exception:
+        logger.exception("video_recovery_failed job_id=%s", job_id)
+        _set_status(job_id, SessionLocal, "unknown", "Не удалось возобновить проверку видео.")
 
 
 app.include_router(health.router)
@@ -67,6 +93,7 @@ app.include_router(appearance.router)
 app.include_router(chat.router)
 app.include_router(debug.router)
 app.include_router(media.router)
+app.include_router(video.router)
 app.include_router(memories.router)
 app.include_router(scenes.router)
 app.include_router(users.router)

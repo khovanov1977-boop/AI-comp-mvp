@@ -30,6 +30,7 @@ from app.services.voice_storage import (
     save_voice_file,
 )
 from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
+from app.services.public_errors import unexpected_error_message
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -151,7 +152,7 @@ def generate_voice_response(db: Session, character: Character, message: Message)
             message,
             character,
             error_type="chat_error",
-            error_message=str(exc) or exc.__class__.__name__,
+            error_message=unexpected_error_message(exc),
         )
 
     try:
@@ -180,7 +181,7 @@ def generate_voice_response(db: Session, character: Character, message: Message)
         db.rollback()
         db.refresh(assistant_message)
         assistant_message.voice_generation_status = "failed"
-        assistant_message.voice_generation_error = str(exc) or exc.__class__.__name__
+        assistant_message.voice_generation_error = unexpected_error_message(exc)
         db.add(assistant_message)
         db.commit()
         db.refresh(message)
@@ -189,7 +190,7 @@ def generate_voice_response(db: Session, character: Character, message: Message)
             character,
             reply=reply,
             error_type="voice_generation_error",
-            error_message=f"Text reply was saved, but voice generation failed: {str(exc) or exc.__class__.__name__}",
+            error_message=f"Text reply was saved, but voice generation failed: {unexpected_error_message(exc)}",
         )
 
     db.refresh(message)
@@ -347,12 +348,12 @@ def retry_voice_generation(message_id: str, db: Session = Depends(get_db)) -> Me
         db.rollback()
         db.refresh(message)
         message.voice_generation_status = "failed"
-        message.voice_generation_error = str(exc) or exc.__class__.__name__
+        message.voice_generation_error = unexpected_error_message(exc)
         db.add(message)
         db.commit()
         raise HTTPException(
             status_code=503,
-            detail=str(exc) or exc.__class__.__name__,
+            detail=unexpected_error_message(exc),
         ) from exc
 
 

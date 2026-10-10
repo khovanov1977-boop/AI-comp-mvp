@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AppearanceCounts, AppearanceSettings, AppearanceStage, Character, CharacterAppearance, ImageGenerationJob } from "@ai-companion/shared";
-import { ApiError, generateAppearance, getApiAssetUrl, getAppearance, getCharacter, publishAppearance, selectAppearanceCandidate } from "../lib/api";
+import { ApiError, generateAppearance, getApiAssetUrl, getAppearance, getCharacter, publicErrorText, publishAppearance, selectAppearanceCandidate } from "../lib/api";
 import type { AppearanceGenerationInput } from "../lib/api";
 
 const stages: Array<{ id: AppearanceStage; label: string; short: string }> = [
@@ -219,7 +219,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
           <strong>Образ создаётся по шагам: 1. лицо → 2. фигура → 3. одежда.</strong>
           <p>После каждого шага выберите подходящий вариант. Можно остановиться на любом этапе — например, сохранить только лицо. Следующий этап использует уже выбранные изображения как референсы.</p>
         </div>
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{publicErrorText(error)}</p>}
         {notice && <p role="status">{notice}</p>}
         {pollError && <p role="alert">{pollError}</p>}
         {busy && <p role="status">Обработка…</p>}
@@ -304,8 +304,8 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
           </div>
           <p className="muted">Смена лица не удаляет выбранную фигуру или одежду: их можно сохранить как отдельные референсы. Если сочетание выглядит несовместимо, пересоздайте только нужный последующий этап.</p>
           {changed && <p role="status" className="muted">Изменённые параметры будут применены при следующем нажатии «Создать варианты».</p>}
-          {appearance.generation_unavailable_reason && <p className="muted">{appearance.generation_unavailable_reason}</p>}
-          {appearance.generation_available && <p className="muted">Модели: лицо — {appearance.image_model}; фигура — {appearance.image_edit_model}; одежда — {appearance.image_clothing_model}. Создание изображений платное; списание идёт с вашего {appearance.image_provider === "hybrid" ? "OpenRouter (лицо, фигура) и Venice (одежда)" : appearance.image_provider === "venice" ? "Venice" : "OpenRouter"}. Автоматические повторы отключены.</p>}
+          {appearance.generation_unavailable_reason && <p className="muted">{publicErrorText(appearance.generation_unavailable_reason)}</p>}
+          {appearance.generation_available && <p className="muted">Создание изображений платное; списание идёт с вашего подключённого баланса. Автоматические повторы отключены.</p>}
           <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || needsFaceAdjustmentChoice || !appearance.generation_available} onClick={() => void generate()}>
             {running ? "Генерация выполняется…" : `Создать варианты (${counts[stage]})`}
           </button>
@@ -314,11 +314,11 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
             <button className="secondary-button" type="button" disabled={busy} onClick={() => void generate(undefined, pendingSubmission)}>Проверить / повторить отправку</button>
           </div>}
           {latestJob && <div className="stack" aria-label="Статус генерации">
-            <span className="muted">Последнее задание: {latestJob.model}</span>
+            <span className="muted">Последнее задание</span>
             {latestJob.outputs.map((item) => <div key={item.index} role="status">
               Вариант {item.index + 1}: {outputLabels[item.status]}
               {item.cost_usd !== null && <span> · ${Number(item.cost_usd).toFixed(4)}</span>}
-              {item.error && <p className="muted">{item.error}</p>}
+              {item.error && <p className="muted">{publicErrorText(item.error)}</p>}
             </div>)}
             {retryCount > 0 && !["queued", "running"].includes(latestJob.status) && <button className="secondary-button" type="button" disabled={locked || changed || !appearance.generation_available} onClick={() => void generate(latestJob)}>Повторить только неполученные ({retryCount})</button>}
           </div>}

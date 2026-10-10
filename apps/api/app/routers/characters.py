@@ -9,6 +9,7 @@ from app.models.media_asset import IdentityReference, MediaAsset
 from app.models.memory import Memory
 from app.models.message import Message
 from app.models.scene_image import SceneImageJob
+from app.models.video import VideoJob
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdate
 from app.services.scene_service import DEFAULT_SCENE
@@ -52,6 +53,7 @@ def to_character_read(character: Character) -> CharacterRead:
         language=profile.language if profile else "ru",
         user_nickname=profile.user_nickname if profile else "",
         voice_id=profile.voice_id if profile and is_supported_voice(profile.voice_id) else "",
+        response_length=profile.response_length if profile and profile.response_length in {"brief", "balanced", "detailed"} else "balanced",
         user_city=user.city if user else "",
         user_country=user.country if user else "",
         user_timezone=user.timezone if user else "Europe/Moscow",
@@ -94,6 +96,7 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         language=payload.language,
         user_nickname=payload.user_nickname,
         voice_id=payload.voice_id,
+        response_length=payload.response_length,
         warmth=payload.warmth,
         initiative=payload.initiative,
         playfulness=payload.playfulness,
@@ -130,7 +133,7 @@ def delete_character(character_id: str, db: Session = Depends(get_db)) -> dict[s
         if not character:
             raise HTTPException(status_code=404, detail="Character not found")
         delete_character_voice_files(character_id)
-        for dependent_model in (SceneImageJob, Message, Memory, ImageGenerationJob, AppearanceCandidate, CharacterAppearance, MediaAsset, IdentityReference):
+        for dependent_model in (SceneImageJob, VideoJob, Message, Memory, ImageGenerationJob, AppearanceCandidate, CharacterAppearance, MediaAsset, IdentityReference):
             db.execute(delete(dependent_model).where(dependent_model.character_id == character_id))
         db.delete(character)
         db.commit()
@@ -163,6 +166,8 @@ def update_character(
         profile.personality_description = payload.personality_description
     if payload.communication_style is not None:
         profile.communication_style = payload.communication_style
+    if payload.response_length is not None:
+        profile.response_length = payload.response_length
     if payload.voice_id is not None:
         if payload.voice_id and not is_supported_voice(payload.voice_id):
             raise HTTPException(status_code=422, detail="Unsupported character voice")

@@ -64,10 +64,7 @@ class OpenRouterSTTProvider:
             raise STTProviderError("Speech recognition request failed") from exc
 
         if response.status_code != 200:
-            detail = response.text.strip().replace("\n", " ")[:500]
             message = f"Speech recognition returned HTTP {response.status_code}"
-            if detail:
-                message = f"{message}: {detail}"
             raise STTProviderError(message)
 
         try:

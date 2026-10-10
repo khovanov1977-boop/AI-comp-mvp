@@ -48,6 +48,7 @@ type CharacterSettingsDraft = Pick<
   | "personality_description"
   | "communication_style"
   | "voice_id"
+  | "response_length"
   | PersonalityTraitKey
 >;
 
@@ -58,6 +59,7 @@ function getCharacterSettingsDraft(character: Character): CharacterSettingsDraft
     personality_description: character.personality_description,
     communication_style: character.communication_style,
     voice_id: character.voice_id,
+    response_length: character.response_length,
     warmth: character.warmth,
     initiative: character.initiative,
     playfulness: character.playfulness,
@@ -447,7 +449,7 @@ export function CompanionPanel({
 
       <AppearancePanel key={character.id} character={character} onCharacterChange={onCharacterChange} />
       <details className="character-settings">
-        <summary>Character settings</summary>
+        <summary>Настройки персонажа</summary>
         <form className="character-settings-form" onSubmit={submitCharacterSettings}>
           <p className="muted">
             These are base personality settings. Mood, trust, closeness, and energy continue to evolve during chat.
@@ -499,6 +501,16 @@ export function CompanionPanel({
               disabled={isSavingCharacter}
               onChange={(event) => updateCharacterDraft("communication_style", event.target.value)}
             />
+          </label>
+          <label className="field">
+            <span className="label">Длина сообщений</span>
+            <select className="select" value={characterDraft.response_length} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("response_length", event.target.value as Character["response_length"])}>
+              <option value="brief">Короткие</option>
+              <option value="balanced">По ситуации</option>
+              <option value="detailed">Развёрнутые</option>
+            </select>
+            <small>Настройка влияет на новые ответы персонажа; прямую просьбу ответить короче или подробнее он учитывает отдельно.</small>
           </label>
           <div className="field">
             <span className="label">Voice</span>

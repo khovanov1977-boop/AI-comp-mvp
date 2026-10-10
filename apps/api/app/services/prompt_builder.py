@@ -23,6 +23,12 @@ MOOD_HUMAN_RU = {
     "guarded": "осторожность: персонаж не закрыт полностью, но держит дистанцию и выбирает слова аккуратнее",
 }
 
+RESPONSE_LENGTH_GUIDANCE = {
+    "brief": "Prefer one or two short sentences, about 10-40 words; expand only when needed to answer the request safely or completely.",
+    "balanced": "Use the conversational lengths below and match the current turn.",
+    "detailed": "Give fuller replies when the user asks an open question or starts a scene: usually 3-6 sentences, about 70-160 words. Keep greetings and simple acknowledgements natural and short.",
+}
+
 def get_mood_human_ru(mood: str) -> str:
     return MOOD_HUMAN_RU.get(mood, "ровное присутствие: персонаж держит спокойный, живой контакт")
 
@@ -59,8 +65,8 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Return only the object required by the response schema. Never wrap it in Markdown or add text outside it.",
         "- Build segments in the exact order in which they occur in the reply.",
         "- kind=speech contains only words the character audibly says. Never put narration, speaker labels, actions, or delivery descriptions in a speech segment.",
-        "- kind=action contains only the character's visible action or nonverbal reaction. Do not put spoken words in an action segment.",
-        "- kind=thought contains only a private, unspoken thought. kind=scene_note contains scene narration. kind=ooc contains only an out-of-character answer.",
+        "- kind=action contains only the character's visible action or nonverbal reaction, narrated in third person using the character's name or a suitable pronoun (for example: 'Она поднимает руку'). Never use first person in an action. Do not put spoken words in an action segment.",
+        "- kind=thought contains only a private, unspoken thought. kind=scene_note contains scene narration in third person. kind=ooc contains only an out-of-character answer.",
         "- Use kind=thought only when the user used thought notation or explicitly asked for the character's private thoughts. Otherwise say a communicative emotional phrase aloud as kind=speech or omit it.",
         "- When current_reply_delivery is voice, do not use kind=thought. Every meaningful phrase addressed to the user must be kind=speech so it is included in the audio.",
         "- Segment text never includes formatting wrappers such as *, **, ~, [scene:], or ((OOC:)); the application renders those wrappers.",
@@ -81,6 +87,8 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Requests such as 'longer', 'more detail', or 'подлиннее' never mean writing up to the technical limit. If the previous reply was already long, continue with another self-contained installment instead of making one message larger.",
         "- A long story may continue across conversational turns, but every individual reply must be complete and stay safely below the 500-token output ceiling.",
         "- A simple turn stays short even when personality emotionality, relationship closeness, or dramatic atmosphere is high. Do not mistake expressiveness for required length.",
+        f"- Selected message length: {profile.response_length}. {RESPONSE_LENGTH_GUIDANCE.get(profile.response_length, RESPONSE_LENGTH_GUIDANCE['balanced'])}",
+        "- The selected message length controls the default level of detail, but explicit user requests for shorter or longer answers take precedence.",
         "- Always end on a complete sentence. Never continue adding imagery, repeated feelings, or actions until the output is cut off.",
         "Current reality / world state (highest priority for physical actions):",
         f"- reality_summary: {world_state.reality_summary}",
@@ -188,7 +196,7 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- Never transfer details from the character's persona, biography, or generic examples to the user.",
         "- If a personal detail is unknown but relevant, ask a short natural question or speak without assuming it.",
         "Speech contract:",
-        "- Speak only as the character, in first person. Never describe the character in third person.",
+        "- Speak only as the character, in first person. Never describe the character in third person in speech segments. Narrate physical actions and scene descriptions in third person instead.",
         "- Voice delivery is supported by the application backend. When the user asks for a voice message or asks you to say something aloud, write the requested content immediately as a natural spoken reply.",
         "- Never claim that you cannot send, record, generate, or use a voice message. Never mention technical limitations, text-only mode, audio generation, TTS, the backend, or the delivery mechanism.",
         "- Do not promise to send audio later and do not substitute a description of what you would say. Simply answer now; the application will deliver the reply in the correct format.",

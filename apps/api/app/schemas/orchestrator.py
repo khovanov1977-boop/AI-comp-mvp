@@ -14,6 +14,7 @@ class OrchestratorProfileContext(BaseModel):
     likes: str
     dislikes: str
     language: str
+    response_length: str = "balanced"
     user_nickname: str
     warmth: int
     initiative: int

@@ -98,25 +98,27 @@ class OpenAICompatibleAppearanceTranslator:
                 payload.pop("model")
                 payload["models"] = [self.model, *self.fallback_models]
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        try:
-            response = self._post(payload, headers)
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
-            raise ImagePromptCompilerError("Image prompt translation request failed") from exc
-        if response.status_code != 200:
-            raise ImagePromptCompilerError(f"Image prompt translator returned HTTP {response.status_code}")
-        try:
-            content = response.json()["choices"][0]["message"]["content"]
-            translated = json.loads(content)
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise ImagePromptCompilerError("Image prompt translator returned malformed data") from exc
-        if (
-            not isinstance(translated, dict)
-            or set(translated) != set(keys)
-            or any(not isinstance(translated[key], str) or not translated[key].strip() for key in keys)
-            or any(not self._uses_latin_script(translated[key]) for key in keys)
-        ):
-            raise ImagePromptCompilerError("Image prompt translator returned invalid fields")
-        return {key: translated[key].strip() for key in keys}
+        models = [self.model]
+        if "api.venice.ai" in self.base_url.casefold():
+            models = list(dict.fromkeys([self.model, *self.fallback_models]))
+        for model in models:
+            if "models" not in payload:
+                payload["model"] = model
+            try:
+                response = self._post(payload, headers)
+                if response.status_code != 200:
+                    continue
+                translated = json.loads(response.json()["choices"][0]["message"]["content"])
+                if (
+                    isinstance(translated, dict)
+                    and set(translated) == set(keys)
+                    and all(isinstance(translated[key], str) and translated[key].strip() for key in keys)
+                    and all(self._uses_latin_script(translated[key]) for key in keys)
+                ):
+                    return {key: translated[key].strip() for key in keys}
+            except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+                continue
+        raise ImagePromptCompilerError("Image prompt translation request failed")
 
     @staticmethod
     def _uses_latin_script(value: str) -> bool:
@@ -157,16 +159,18 @@ class ImagePromptCompiler:
 
 def get_image_prompt_compiler(config: Settings = settings) -> ImagePromptCompiler:
     translator = None
-    if config.llm_provider.strip().casefold() == "openai_compatible":
-        models = [config.llm_model.strip()]
-        if "openrouter.ai" in config.llm_base_url.casefold():
+    if config.llm_provider.strip().casefold() in {"openai_compatible", "venice"}:
+        models = [config.effective_llm_model]
+        if "openrouter.ai" in config.effective_llm_base_url.casefold():
             for candidate in config.image_prompt_models.split(","):
                 model = candidate.strip()
                 if model and model not in models:
                     models.append(model)
+        elif config.llm_provider.strip().casefold() == "venice":
+            models.extend(model for model in config.effective_llm_fallback_models if model not in models)
         translator = OpenAICompatibleAppearanceTranslator(
-            base_url=config.llm_base_url,
-            api_key=config.llm_api_key,
+            base_url=config.effective_llm_base_url,
+            api_key=config.effective_llm_api_key,
             model=models[0],
             timeout_seconds=config.llm_timeout_seconds,
             max_tokens=max(1000, config.llm_max_tokens),

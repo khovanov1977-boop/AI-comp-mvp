@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { VoiceOption } from "@ai-companion/shared";
-import { listVoiceOptions, previewVoice } from "../lib/api";
+import { listVoiceOptions, previewVoice, publicErrorText } from "../lib/api";
 
 export function VoiceSelector({
   gender,
@@ -109,7 +109,7 @@ export function VoiceSelector({
         </button>
       </div>
       {previewUrl ? <audio className="voice-preview" src={previewUrl} controls autoPlay /> : null}
-      {error ? <small className="voice-selector-error">{error}</small> : null}
+      {error ? <small className="voice-selector-error">{publicErrorText(error)}</small> : null}
     </div>
   );
 }

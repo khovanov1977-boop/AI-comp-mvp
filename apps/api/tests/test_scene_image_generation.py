@@ -30,7 +30,7 @@ from app.services.scene_image_prompt import CompiledSceneImagePrompt, SceneImage
 
 
 class SceneImagePromptTest(unittest.TestCase):
-    def test_resolves_recent_clothing_and_latest_override_in_english(self):
+    def test_explicit_outfit_request_survives_wrong_scene_model_clothing(self):
         def handler(request):
             body = json.loads(request.content)
             self.assertEqual(body["models"][0], "current/model")
@@ -39,24 +39,47 @@ class SceneImagePromptTest(unittest.TestCase):
             self.assertIn("смени одежду на синее платье", source["latest_photo_request"])
             self.assertIn("highest priority", body["messages"][0]["content"])
             return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
-                "location": "kitchen", "activity": "drinking tea", "clothing": "blue dress",
+                "location": "kitchen", "activity": "drinking tea", "clothing": "red skirt",
                 "pose": "seated", "lighting": "warm daylight",
             })}}]})
 
         client = httpx.Client(transport=httpx.MockTransport(handler))
         self.addCleanup(client.close)
-        config = Settings(llm_base_url="https://openrouter.ai/api/v1", llm_api_key="test",
+        config = Settings(llm_provider="openai_compatible", llm_base_url="https://openrouter.ai/api/v1", llm_api_key="test",
                           llm_model="current/model", image_prompt_models="backup/model")
         result = SceneImagePromptCompiler(config, client).compile(
             {"location_name": "kitchen"}, [{"role": "assistant", "content": "Сижу пью чай в халате"}],
             "Пришли фото, но сначала смени одежду на синее платье",
         )
         self.assertIn("Current activity: drinking tea", result.prompt)
-        self.assertIn("Clothing: blue dress", result.prompt)
+        self.assertIn("смени одежду на синее платье", result.prompt)
+        self.assertIn("Clothing: follow the latest photo request exactly", result.prompt)
+        self.assertNotIn("red skirt", result.prompt)
+        self.assertEqual(result.resolved["clothing"], "")
+        self.assertLessEqual(len(result.prompt), 1500)
+
+    def test_request_without_clothes_cannot_be_replaced_by_inferred_outfit(self):
+        def handler(_request):
+            fields = {"location": "bedroom", "activity": "standing", "clothing": "pleated skirt",
+                      "pose": "facing camera", "lighting": "warm light"}
+            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(fields)}}]})
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        self.addCleanup(client.close)
+        config = Settings(llm_provider="openai_compatible", llm_base_url="https://example.test/api/v1",
+                          llm_api_key="test", llm_model="current/model")
+        result = SceneImagePromptCompiler(config, client).compile(
+            {}, [], "Пришли свое фото совсем без одежды",
+        )
+        self.assertIn("Clothing: no clothing, fully nude", result.prompt)
+        self.assertIn("Пришли свое фото совсем без одежды", result.prompt)
+        self.assertNotIn("pleated skirt", result.prompt)
+        self.assertEqual(result.resolved["clothing"], "no clothing")
         self.assertLessEqual(len(result.prompt), 1500)
 
     def test_intent_requires_photo_request(self):
         self.assertTrue(is_photo_request("Пришли фото"))
+        self.assertTrue(is_photo_request("Пришли фото себя по текущему контексту нашего разговора и активной сцены."))
         self.assertTrue(is_photo_request("Покажи фотографию, как пьешь чай"))
         self.assertFalse(is_photo_request("Я вчера видел твоё фото"))
 
@@ -74,7 +97,7 @@ class SceneImagePromptTest(unittest.TestCase):
 
         client = httpx.Client(transport=httpx.MockTransport(handler))
         self.addCleanup(client.close)
-        config = Settings(llm_base_url="https://openrouter.ai/api/v1", llm_api_key="test",
+        config = Settings(llm_provider="openai_compatible", llm_base_url="https://openrouter.ai/api/v1", llm_api_key="test",
                           llm_model="current/model", image_prompt_models="backup/model")
         result = SceneImagePromptCompiler(config, client).compile({}, [], "Пришли фото")
         self.assertEqual(len(calls), 2)
@@ -136,6 +159,7 @@ class SceneImageJobTest(unittest.TestCase):
             character = db.get(Character, self.character_id)
             job, created = submit_scene_image(db, character, "Пришли фото", request_id, compiler)
             self.assertTrue(created)
+            self.assertEqual(job.model, "qwen-edit-uncensored")
             self.assertEqual(compiler.compile.call_args.args[1][-1]["content"], "Сижу пью чай в халате")
             duplicate, created = submit_scene_image(db, character, "Пришли фото", request_id, compiler)
             self.assertFalse(created)
@@ -147,6 +171,7 @@ class SceneImageJobTest(unittest.TestCase):
         run_scene_image(str(request_id), self.sessions, provider)
         run_scene_image(str(request_id), self.sessions, provider)
         provider.generate.assert_called_once()
+        self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
         with self.sessions() as db:
             job = db.get(SceneImageJob, str(request_id))
             message = db.get(Message, job.assistant_message_id)

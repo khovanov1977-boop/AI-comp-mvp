@@ -84,10 +84,7 @@ class OpenRouterTTSProvider:
             raise TTSProviderError("Voice generation request failed")
 
         if response.status_code != 200:
-            detail = response.text.strip().replace("\n", " ")[:500]
             message = f"Voice generation returned HTTP {response.status_code}"
-            if detail:
-                message = f"{message}: {detail}"
             raise TTSProviderError(message)
         if not response.content:
             raise TTSProviderError("Voice generation returned empty audio")

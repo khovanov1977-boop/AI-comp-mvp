@@ -1,4 +1,6 @@
 .env
+.env.beta
+deploy/*.env
 .venv/
 __pycache__/
 *.pyc
@@ -7,6 +9,7 @@ apps/api/data/
 frontend-dev*.log
 node_modules/
 .next/
+*.tsbuildinfo
 dist/
 coverage/
 tts-samples/

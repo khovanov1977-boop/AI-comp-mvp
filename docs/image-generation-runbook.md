@@ -1,7 +1,10 @@
 # Character image generation: local setup and verification
 
-Updated: 2026-09-23. The Venice Qwen integration is available in the
-appearance wizard. Existing OpenRouter settings remain as a switch-back path.
+Updated: 2026-10-07. The appearance wizard uses the Grok Imagine 2.0
+generation/edit pair through Venice. New in-chat context photos use
+`qwen-edit-uncensored` with one published appearance reference. Existing jobs
+keep their recorded model. Historical live-test results below describe previous
+configurations, not necessarily the current route.
 
 Latest live result: after the user changed their internet connection, the public
 catalogue and key checks both returned HTTP 200. One explicit retry through the
@@ -35,7 +38,7 @@ both selected face and body ($0.06). No configuration/code change was needed.
   provider response costs, not an independent account invoice reconciliation.
 - This passes one front-facing, single-character creation flow; it is not a
   benchmark or guarantee for other characters, angles, expressions or scenes.
-  Contextual chat images remain outside this slice.
+  Contextual chat images were outside this historical test.
 
 ## Configuration
 
@@ -71,25 +74,24 @@ The isolated database was opened read-only; published version 1 was not changed.
 Use the same backend `.env` as the text model; do not create another file:
 
 ```env
-IMAGE_PROVIDER=hybrid
-GROK_IMAGE_MODEL=x-ai/grok-imagine-image-2.0
+IMAGE_PROVIDER=venice
 VENICE_API_KEY=your_existing_venice_key
-VENICE_IMAGE_MODEL=qwen-image-3
-VENICE_IMAGE_EDIT_MODEL=qwen-edit-uncensored
+VENICE_IMAGE_MODEL=grok-imagine-image-2-0
+VENICE_IMAGE_EDIT_MODEL=grok-imagine-image-2-0-edit
+VENICE_SCENE_IMAGE_EDIT_MODEL=qwen-edit-uncensored
 IMAGE_TIMEOUT_SECONDS=180
-
-# OpenRouter credential for Grok; an empty IMAGE_API_KEY reuses LLM_API_KEY:
-IMAGE_BASE_URL=https://openrouter.ai/api/v1
-IMAGE_API_KEY=
-IMAGE_MODEL=black-forest-labs/flux.2-pro
 ```
 
-In `hybrid` mode, face and body use `x-ai/grok-imagine-image-2.0` through
-OpenRouter. Face has no reference; body receives the selected face. Clothing
-uses `qwen-edit-uncensored` through Venice and receives only the selected body
-image, already derived from the face. Each job stores its actual provider and
-model so an explicit retry stays on the original route even if the global
-setting changes. This does not guarantee perfect identity preservation.
+The face is generated without a reference. Body uses the selected face image;
+clothing uses the selected body image, already derived from that face. The
+in-chat «Фото» action edits the published full-look image with its separate
+scene-image model. New jobs request 2:3 PNG with prompt enhancement disabled
+and `safe_mode=false`. Grok wizard jobs request 1K; the Qwen edit route does not
+send a resolution parameter. Venice may return JPEG, which the adapter converts
+to PNG for storage. Generation requests medium quality; the edit endpoint does
+not accept an explicit quality parameter. Each job stores its provider and model
+so an explicit retry stays on its original route even if the global setting
+changes. This does not guarantee perfect identity preservation.
 The Venice adapter does not report cost, so the wizard's per-image cost field
 may be empty; charges still appear on the Venice account.
 
@@ -100,20 +102,15 @@ deterministic. The compiled settings and compiler version are saved with the
 job; an explicit retry reuses the saved prompt and does not translate again. If
 translation fails, no image request is sent.
 
-For OpenRouter, translation starts with `LLM_MODEL`, then falls back to
-`IMAGE_PROMPT_MODELS` (`qwen/qwen3-30b-a3b-instruct-2507`, then
-`sao10k/l3-lunaris-8b` by default). OpenRouter moves to the next model on rate
-limits or downtime and bills the model that returns the successful translation.
-This auxiliary text fallback never repeats a Venice image request.
+With `LLM_PROVIDER=venice`, appearance translation uses the configured Venice
+text-model chain. A translation failure never repeats a paid image request.
 
-For the previous all-Venice flow, set `IMAGE_PROVIDER=venice`. For an
-all-OpenRouter flow, set `IMAGE_PROVIDER=openrouter` and configure `IMAGE_MODEL`.
+For the legacy all-OpenRouter flow, set `IMAGE_PROVIDER=openrouter` and configure `IMAGE_MODEL`.
 For OpenRouter, an empty `IMAGE_API_KEY` reuses `LLM_API_KEY`.
 Keep secrets server-side. `.env.example` defaults to `IMAGE_PROVIDER=disabled`
 to avoid accidental paid requests. Restart the backend after changing provider
-settings. HF is not connected. Chat-scene image generation is still separate
-work; the wizard switch does not enable it. The current `/media/image` endpoint
-returns 409 rather than generating a scene.
+settings. Chat-scene image generation is available through its separate chat
+endpoint. No image request is automatically repeated after an ambiguous failure.
 
 Install the updated backend requirements (including Pillow) in `apps/api`:
 

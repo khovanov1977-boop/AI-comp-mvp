@@ -5,6 +5,7 @@ from app.database import SessionLocal, get_db
 from app.schemas.appearance import AppearanceGenerate, AppearancePublish, AppearanceSelection, AppearanceStage
 from app.services.appearance_service import publish_appearance, read_appearance, select_candidate
 from app.services.image_generation import run_generation, submit_generation
+from app.services.beta_limits import PAID_SUBMISSION_LOCK
 
 router = APIRouter(prefix="/characters/{character_id}/appearance", tags=["appearance"])
 
@@ -34,7 +35,8 @@ def generate_candidates(
     background_tasks: BackgroundTasks, db: Session = Depends(get_db),
     session_factory=Depends(get_image_session_factory),
 ) -> dict:
-    job, created = submit_generation(db, character_id, stage, payload)
+    with PAID_SUBMISSION_LOCK:
+        job, created = submit_generation(db, character_id, stage, payload)
     if created:
         background_tasks.add_task(run_generation, job.id, session_factory)
     return read_appearance(db, character_id)

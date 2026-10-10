@@ -17,6 +17,8 @@ from app.models.message import Message
 from app.models.scene_image import SceneImageJob
 from app.providers.image_backend import create_image_provider, image_configuration_error
 from app.providers.image_openrouter import ImageProviderError
+from app.providers.image_venice import EDIT_MODELS
+from app.services.beta_limits import paid_limit_reason, reserve_paid_units
 from app.services.image_generation import GENERATION_SLOTS, IMAGE_COMMIT_LOCK
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
 from app.services.scene_image_prompt import SceneImagePromptCompiler, SceneImagePromptError
@@ -46,9 +48,15 @@ def submit_scene_image(db: Session, character: Character, request: str, request_
         if existing.character_id != character.id or not original or original.content != request:
             raise HTTPException(409, "Идентификатор уже используется другим запросом.")
         return existing, False
+    limit_reason = paid_limit_reason(db, "image")
+    if limit_reason:
+        raise HTTPException(429, limit_reason)
     error = image_configuration_error(provider_name="venice")
     if error:
         raise HTTPException(503, error)
+    edit_model = settings.venice_scene_image_edit_model.strip()
+    if edit_model not in EDIT_MODELS:
+        raise HTTPException(503, "Некорректно настроена модель фото по контексту.")
     if db.scalar(select(SceneImageJob.id).where(SceneImageJob.active_key == character.id)):
         raise HTTPException(409, "Фото для этого персонажа уже создаётся. Дождитесь результата.")
     appearance = db.get(CharacterAppearance, character.id)
@@ -77,6 +85,7 @@ def submit_scene_image(db: Session, character: Character, request: str, request_
         compiled = (compiler or SceneImagePromptCompiler()).compile(scene_data, dialogue, request)
     except SceneImagePromptError as exc:
         raise HTTPException(503, str(exc)) from exc
+    reserve_paid_units(db, "image", 1)
     user_message = Message(character_id=character.id, role="user", content=request)
     assistant_message = Message(character_id=character.id, role="assistant", content="Готовлю фото…",
                                 message_type="image", image_generation_status="queued")
@@ -84,7 +93,7 @@ def submit_scene_image(db: Session, character: Character, request: str, request_
     db.flush()
     job = SceneImageJob(id=job_id, character_id=character.id, active_key=character.id,
                         user_message_id=user_message.id, assistant_message_id=assistant_message.id,
-                        provider="venice", model=settings.venice_image_edit_model.strip(),
+                        provider="venice", model=edit_model,
                         reference_url=reference_url, prompt=compiled.prompt, status="queued")
     db.add(job)
     try:
@@ -142,7 +151,7 @@ def run_scene_image(job_id: str, session_factory, provider=None) -> None:
             return
         except Exception:
             logger.exception("scene_image_request_unknown job_id=%s", job_id)
-            _finish(job_id, session_factory, "unknown", "Неожиданный сбой при запросе к Venice; результат неизвестен.")
+            _finish(job_id, session_factory, "unknown", "Неожиданный сбой при создании фото; результат неизвестен.")
             return
         url = None
         try:

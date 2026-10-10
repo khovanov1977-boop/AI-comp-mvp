@@ -20,13 +20,16 @@ class VeniceImageTestCase(unittest.TestCase):
         out = BytesIO()
         Image.new("RGB", (12, 16), "navy").save(out, format="PNG")
         self.png = out.getvalue()
+        out = BytesIO()
+        Image.new("RGB", (12, 16), "navy").save(out, format="JPEG")
+        self.jpeg = out.getvalue()
 
     def test_models_and_configuration(self):
         self.assertEqual(image_configuration_error(self.config), "")
-        self.assertEqual(model_for_stage("face", self.config), "qwen-image-3")
-        self.assertEqual(model_for_stage("body", self.config), "qwen-edit-uncensored")
-        self.assertEqual(model_for_stage("clothing", self.config), "qwen-edit-uncensored")
-        self.assertIn("VENICE_API_KEY", image_configuration_error(self.config.model_copy(update={"venice_api_key": ""})))
+        self.assertEqual(model_for_stage("face", self.config), "grok-imagine-image-2-0")
+        self.assertEqual(model_for_stage("body", self.config), "grok-imagine-image-2-0-edit")
+        self.assertEqual(model_for_stage("clothing", self.config), "grok-imagine-image-2-0-edit")
+        self.assertIn("Не настроен доступ", image_configuration_error(self.config.model_copy(update={"venice_api_key": ""})))
         self.assertEqual(image_configuration_error(self.config.model_copy(update={"image_provider": "openrouter", "image_model": "flux", "llm_api_key": "key"})), "")
 
     def test_hybrid_uses_grok_for_face_and_body_and_venice_for_clothing(self):
@@ -36,9 +39,9 @@ class VeniceImageTestCase(unittest.TestCase):
         self.assertEqual([provider_for_stage(stage, config) for stage in ("face", "body", "clothing")],
                          ["openrouter", "openrouter", "venice"])
         self.assertEqual([model_for_stage(stage, config) for stage in ("face", "body", "clothing")],
-                         ["x-ai/grok-imagine-image-2.0", "x-ai/grok-imagine-image-2.0", "qwen-edit-uncensored"])
-        self.assertIn("VENICE_API_KEY", image_configuration_error(config.model_copy(update={"venice_api_key": ""})))
-        self.assertIn("LLM_API_KEY", image_configuration_error(config.model_copy(update={"llm_api_key": ""})))
+                         ["x-ai/grok-imagine-image-2.0", "x-ai/grok-imagine-image-2.0", "grok-imagine-image-2-0-edit"])
+        self.assertIn("Не настроен доступ", image_configuration_error(config.model_copy(update={"venice_api_key": ""})))
+        self.assertIn("Не настроен доступ", image_configuration_error(config.model_copy(update={"llm_api_key": ""})))
 
     def test_create_and_edit_payloads_match_tested_pair(self):
         calls = []
@@ -51,22 +54,24 @@ class VeniceImageTestCase(unittest.TestCase):
             self.assertIs(body["safe_mode"], False)
             self.assertIs(body["enhance_prompt"], False)
             if str(request.url).endswith("/image/generate"):
-                self.assertEqual(body["model"], "qwen-image-3")
+                self.assertEqual(body["model"], "grok-imagine-image-2-0")
                 self.assertEqual(body["resolution"], "1K")
+                self.assertEqual(body["quality"], "medium")
                 self.assertEqual(body["negative_prompt"], "glasses, eyewear")
                 self.assertNotIn("image", body)
                 return httpx.Response(200, json={"images": [base64.b64encode(self.png).decode()]})
             self.assertTrue(str(request.url).endswith("/image/edit"))
-            self.assertEqual(body["model"], "qwen-edit-uncensored")
-            self.assertNotIn("resolution", body)
+            self.assertEqual(body["model"], "grok-imagine-image-2-0-edit")
+            self.assertEqual(body["resolution"], "1K")
+            self.assertNotIn("quality", body)
             self.assertEqual(base64.b64decode(body["image"]), self.png)
             return httpx.Response(200, headers={"content-type": "image/png"}, content=self.png)
 
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             provider = VeniceImageProvider(self.config, client)
-            self.assertEqual(provider.generate(model="qwen-image-3", prompt="face", references=[],
+            self.assertEqual(provider.generate(model="grok-imagine-image-2-0", prompt="face", references=[],
                                                negative_prompt="glasses, eyewear").data, self.png)
-            self.assertEqual(provider.generate(model="qwen-edit-uncensored", prompt="body", references=[self.png]).data, self.png)
+            self.assertEqual(provider.generate(model="grok-imagine-image-2-0-edit", prompt="body", references=[self.png]).data, self.png)
         self.assertEqual(len(calls), 2)
 
     def test_negative_prompt_is_rejected_for_edit_before_paid_request(self):
@@ -74,7 +79,7 @@ class VeniceImageTestCase(unittest.TestCase):
         with httpx.Client(transport=httpx.MockTransport(lambda request: calls.append(request))) as client:
             with self.assertRaises(ImageProviderError):
                 VeniceImageProvider(self.config, client).generate(
-                    model="qwen-edit-uncensored", prompt="body", references=[self.png],
+                    model="grok-imagine-image-2-0-edit", prompt="body", references=[self.png],
                     negative_prompt="glasses")
         self.assertEqual(calls, [])
 
@@ -83,7 +88,7 @@ class VeniceImageTestCase(unittest.TestCase):
         with httpx.Client(transport=httpx.MockTransport(lambda request: calls.append(request))) as client:
             provider = VeniceImageProvider(self.config, client)
             with self.assertRaises(ImageProviderError):
-                provider.generate(model="qwen-edit-uncensored", prompt="p", references=[self.png, self.png])
+                provider.generate(model="grok-imagine-image-2-0-edit", prompt="p", references=[self.png, self.png])
         self.assertEqual(calls, [])
 
     def test_no_automatic_retry_or_key_leak(self):
@@ -94,7 +99,7 @@ class VeniceImageTestCase(unittest.TestCase):
                 return httpx.Response(status, json={"error": {"message": "private-test-key rejected"}})
             with self.subTest(status=status), httpx.Client(transport=httpx.MockTransport(handler)) as client:
                 with self.assertRaises(ImageProviderError) as caught:
-                    VeniceImageProvider(self.config, client).generate(model="qwen-image-3", prompt="p", references=[])
+                    VeniceImageProvider(self.config, client).generate(model="grok-imagine-image-2-0", prompt="p", references=[])
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(caught.exception.unknown_outcome, status == 500)
                 self.assertNotIn("private-test-key", str(caught.exception))
@@ -104,6 +109,40 @@ class VeniceImageTestCase(unittest.TestCase):
         prompt = build_appearance_prompt("clothing", {"gender": "female", "clothing": "red dress"}, "venice")
         self.assertIn("selected body image", prompt)
         self.assertNotIn("reference 2", prompt)
+
+    def test_qwen_edit_for_context_photos_and_previous_jobs(self):
+        calls = []
+
+        def handler(request):
+            calls.append(json.loads(request.content))
+            if str(request.url).endswith("/image/generate"):
+                return httpx.Response(200, json={"images": [base64.b64encode(self.png).decode()]})
+            return httpx.Response(200, headers={"content-type": "image/png"}, content=self.png)
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            provider = VeniceImageProvider(self.config, client)
+            self.assertEqual(provider.generate(model="qwen-image-3", prompt="face", references=[]).data, self.png)
+            self.assertEqual(provider.generate(model="qwen-edit-uncensored", prompt="body", references=[self.png]).data, self.png)
+        self.assertEqual([call["model"] for call in calls], ["qwen-image-3", "qwen-edit-uncensored"])
+        self.assertNotIn("quality", calls[0])
+        self.assertNotIn("quality", calls[1])
+        self.assertIs(calls[1]["safe_mode"], False)
+        self.assertIs(calls[1]["enhance_prompt"], False)
+        self.assertNotIn("resolution", calls[1])
+
+    def test_grok_jpeg_is_normalized_to_png_for_storage(self):
+        def handler(request):
+            if str(request.url).endswith("/image/generate"):
+                return httpx.Response(200, json={"images": [base64.b64encode(self.jpeg).decode()]})
+            return httpx.Response(200, headers={"content-type": "image/jpeg"}, content=self.jpeg)
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            provider = VeniceImageProvider(self.config, client)
+            generated = provider.generate(model="grok-imagine-image-2-0", prompt="face", references=[])
+            edited = provider.generate(model="grok-imagine-image-2-0-edit", prompt="body", references=[generated.data])
+        for result in (generated, edited):
+            self.assertTrue(result.data.startswith(b"\x89PNG\r\n\x1a\n"))
+            self.assertEqual(Image.open(BytesIO(result.data)).size, (12, 16))
 
 
 if __name__ == "__main__":

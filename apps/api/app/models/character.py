@@ -39,6 +39,7 @@ class CharacterProfile(Base):
     language: Mapped[str] = mapped_column(String, default="ru")
     user_nickname: Mapped[str] = mapped_column(String, default="")
     voice_id: Mapped[str] = mapped_column(String, default="")
+    response_length: Mapped[str] = mapped_column(String, default="balanced")
     warmth: Mapped[int] = mapped_column(Integer, default=50)
     initiative: Mapped[int] = mapped_column(Integer, default=50)
     playfulness: Mapped[int] = mapped_column(Integer, default=50)

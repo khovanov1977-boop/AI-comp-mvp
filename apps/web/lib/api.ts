@@ -56,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the status-based message when the API does not return JSON.
     }
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(publicErrorText(message), response.status, code);
   }
 
   return response.json() as Promise<T>;
@@ -79,6 +79,7 @@ export type CharacterCreateInput = {
   user_timezone: string;
   user_language: string;
   voice_id: string;
+  response_length: Character["response_length"];
   warmth: number;
   initiative: number;
   playfulness: number;
@@ -94,6 +95,7 @@ export type CharacterUpdateInput = Pick<
   | "personality_description"
   | "communication_style"
   | "voice_id"
+  | "response_length"
   | "warmth"
   | "initiative"
   | "playfulness"
@@ -193,6 +195,70 @@ export function updateUserProfile(input: UserProfileUpdateInput) {
 
 export function getChatHistory(characterId: string) {
   return request<ChatMessage[]>(`/chat/${characterId}`);
+}
+
+export function publicErrorText(value: string) {
+  if (!/(?:venice|openrouter|wan[-\s]?2|seedance|qwen|grok|mistral|gemini|whisper|flux\.\d)/i.test(value)) return value;
+  const status = value.match(/HTTP\s+\d{3}/i)?.[0];
+  return `Не удалось завершить операцию${status ? ` (${status})` : ""}. Проверьте её статус перед повтором запроса.`;
+}
+
+export type ScenarioIdea = { title: string; opening_message: string };
+
+export function generateScenarioIdeas(characterId: string) {
+  return request<{ ideas: ScenarioIdea[]; source: "model" | "local" }>(`/chat/${characterId}/ideas`, { method: "POST" });
+}
+
+export type VideoMode = "animate_photo" | "reference_video";
+export type VideoAspectRatio = "auto" | "16:9" | "9:16" | "4:3" | "3:4" | "1:1" | "2:3";
+export type VideoQuote = {
+  model: string;
+  available: boolean;
+  price_usd: string | null;
+  unavailable_reason: string;
+};
+export type VideoJob = {
+  id: string;
+  mode: VideoMode;
+  model: string;
+  status: string;
+  quote_usd: string;
+  aspect_ratio: VideoAspectRatio;
+  error: string;
+  created_at: string;
+};
+
+export function videoPreset(_mode: VideoMode) {
+  return { duration: "5s" as const, resolution: "480p" as const };
+}
+
+export function getVideoQuote(mode: VideoMode, aspectRatio: VideoAspectRatio = "auto") {
+  return request<VideoQuote>("/video/quote", {
+    method: "POST",
+    body: JSON.stringify({ mode, ...videoPreset(mode), aspect_ratio: aspectRatio }),
+  });
+}
+
+export function createVideo(characterId: string, input: {
+  request_id: string;
+  mode: VideoMode;
+  prompt: string;
+  aspect_ratio: VideoAspectRatio;
+  source_message_id?: string;
+  accepted_quote_usd: string;
+}) {
+  return request<VideoJob>(`/video/${characterId}`, {
+    method: "POST",
+    body: JSON.stringify({ ...input, ...videoPreset(input.mode) }),
+  });
+}
+
+export function getVideoJob(characterId: string, jobId: string) {
+  return request<VideoJob>(`/video/${characterId}/${jobId}`);
+}
+
+export function checkVideoJob(characterId: string, jobId: string) {
+  return request<VideoJob>(`/video/${characterId}/${jobId}/check`, { method: "POST" });
 }
 
 export type VoiceChatResult = {

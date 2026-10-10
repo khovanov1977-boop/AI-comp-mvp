@@ -1,6 +1,6 @@
 "use client";
 
-import { getApiAssetUrl } from "../lib/api";
+import { getApiAssetUrl, publicErrorText } from "../lib/api";
 
 function formatDuration(durationMs: number | null) {
   if (!durationMs) {
@@ -43,7 +43,7 @@ export function VoiceMessagePlayer({
       {transcriptionStatus === "pending" ? <small>Transcription was interrupted.</small> : null}
       {transcriptionStatus === "failed" ? (
         <div className="voice-transcription-error">
-          <small>{transcriptionError || "Could not transcribe this recording."}</small>
+          <small>{transcriptionError ? publicErrorText(transcriptionError) : "Could not transcribe this recording."}</small>
         </div>
       ) : null}
       {onRetry && (transcriptionStatus === "pending" || transcriptionStatus === "failed") ? (

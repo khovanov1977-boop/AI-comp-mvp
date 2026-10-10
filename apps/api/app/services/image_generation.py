@@ -32,6 +32,7 @@ from app.services.appearance_service import (
 )
 from app.services.image_prompt_compiler import ImagePromptCompilerError, get_image_prompt_compiler
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
+from app.services.beta_limits import paid_limit_reason, reserve_paid_units
 
 # Protect final file/DB writes against same-process character deletion. Never hold
 # this lock over a network request. The DB row lock covers PostgreSQL processes.
@@ -54,6 +55,10 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         if existing.character_id != character_id or existing.stage != stage or existing.retry_of != (str(payload.retry_of) if payload.retry_of else None):
             raise HTTPException(409, "Идентификатор запроса уже используется другим заданием.")
         return existing, False
+    requested_units = payload.count if not payload.retry_of else 1
+    limit_reason = paid_limit_reason(db, "image", requested_units or 1)
+    if limit_reason:
+        raise HTTPException(429, limit_reason)
     if not payload.retry_of:
         error = image_configuration_error()
         if error:
@@ -162,6 +167,7 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         context["negative_prompt"] = negative_prompt
     if not 1 <= count <= 3:
         raise HTTPException(422, "Количество вариантов должно быть от 1 до 3.")
+    reserve_paid_units(db, "image", count)
     job = ImageGenerationJob(
         id=job_id, character_id=character_id, active_key=character_id, retry_of=retry_of,
         stage=stage, model=model, input_context=context,

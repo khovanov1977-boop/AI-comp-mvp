@@ -71,6 +71,7 @@ export type Character = {
   language: string;
   user_nickname: string;
   voice_id: string;
+  response_length: "brief" | "balanced" | "detailed";
   user_city: string;
   user_country: string;
   user_timezone: string;
@@ -106,6 +107,10 @@ export type ChatMessage = {
     image_url: string;
     image_generation_status: "not_applicable" | "queued" | "running" | "completed" | "failed" | "unknown" | "not_started";
     image_generation_error: string;
+    video_url: string;
+    video_generation_status: "not_applicable" | "queued" | "sending" | "processing" | "completed" | "failed" | "unknown" | "not_started";
+    video_generation_error: string;
+    video_job_id: string;
   audio_url: string;
   audio_mime_type: string;
   audio_duration_ms: number | null;

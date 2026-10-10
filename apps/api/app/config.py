@@ -32,12 +32,41 @@ class Settings(BaseSettings):
     grok_image_model: str = "x-ai/grok-imagine-image-2.0"
     image_timeout_seconds: int = 180
     venice_api_key: str = ""
-    venice_image_model: str = "qwen-image-3"
-    venice_image_edit_model: str = "qwen-edit-uncensored"
+    venice_llm_model: str = "gemma-4-uncensored"
+    venice_llm_fallback_models: str = "venice-uncensored-1-2,venice-uncensored-role-play"
+    venice_stt_model: str = "openai/whisper-large-v3"
+    venice_tts_model: str = "tts-gemini-3-1-flash"
+    venice_image_model: str = "grok-imagine-image-2-0"
+    venice_image_edit_model: str = "grok-imagine-image-2-0-edit"
+    venice_scene_image_edit_model: str = "qwen-edit-uncensored"
+    venice_video_i2v_model: str = "wan-3-0-reference-to-video"
+    venice_video_r2v_model: str = "wan-3-0-reference-to-video"
+    # -1 leaves local development unchanged; a beta instance must set explicit caps.
+    beta_max_image_outputs: int = -1
+    beta_max_video_requests: int = -1
+    beta_safe_errors: bool = False
+    beta_deployment: bool = False
 
     @property
     def effective_image_api_key(self) -> str:
         return self.image_api_key.strip() or self.llm_api_key.strip()
+
+    @property
+    def effective_llm_base_url(self) -> str:
+        return "https://api.venice.ai/api/v1" if self.llm_provider.strip().casefold() == "venice" else self.llm_base_url.strip()
+
+    @property
+    def effective_llm_api_key(self) -> str:
+        return self.venice_api_key.strip() if self.llm_provider.strip().casefold() == "venice" else self.llm_api_key.strip()
+
+    @property
+    def effective_llm_model(self) -> str:
+        return self.venice_llm_model.strip() if self.llm_provider.strip().casefold() == "venice" else self.llm_model.strip()
+
+    @property
+    def effective_llm_fallback_models(self) -> tuple[str, ...]:
+        value = self.venice_llm_fallback_models if self.llm_provider.strip().casefold() == "venice" else self.llm_fallback_models
+        return tuple(model.strip() for model in value.split(",") if model.strip())
 
     model_config = SettingsConfigDict(env_file=(".env", "../../.env"), extra="ignore")
 

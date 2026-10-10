@@ -15,6 +15,7 @@ from app.schemas.appearance import AppearanceSettings
 from app.services.voice_catalog import is_voice_compatible
 from app.providers.image_backend import image_configuration_error, model_for_stage
 from app.services.image_storage import resolve_image_file
+from app.services.beta_limits import paid_limit_reason
 
 STAGES = ("face", "body", "clothing")
 SHARED_FIELDS = ("gender", "style")
@@ -110,7 +111,7 @@ def read_appearance(db: Session, character_id: str) -> dict:
                     "current": candidate_is_current(appearance, candidate),
                     "created_at": candidate.created_at.replace(tzinfo=timezone.utc).isoformat(),
                 })
-    configuration_error = image_configuration_error()
+    configuration_error = image_configuration_error() or paid_limit_reason(db, "image")
     return {
         "character_id": character_id,
         "revision": appearance.revision if appearance else 0,
