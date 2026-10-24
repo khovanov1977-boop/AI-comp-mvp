@@ -9,17 +9,19 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.config import settings
-from app.models.user import User, UserSession
+from app.models.user import User, UserConsent, UserSession
 from app.schemas.user import UserRead
 from app.security import SESSION_AGE, SESSION_COOKIE, create_session, current_user, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+CONSENT_VERSION = "2026-10-24"
 
 
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=10, max_length=128)
     display_name: str = Field(min_length=1, max_length=100)
+    privacy_consent: bool
 
 
 class LoginRequest(BaseModel):
@@ -47,9 +49,13 @@ def register(payload: RegisterRequest, request: Request, response: Response,
     name = payload.display_name.strip()
     if not name:
         raise HTTPException(422, "Введите имя.")
+    if not payload.privacy_consent:
+        raise HTTPException(422, "Для регистрации необходимо согласие на обработку данных.")
     user = User(email=email, display_name=name, password_hash=hash_password(payload.password))
     try:
         db.add(user)
+        db.flush()
+        db.add(UserConsent(user_id=user.id, version=CONSENT_VERSION))
         db.commit()
     except IntegrityError as exc:
         db.rollback()

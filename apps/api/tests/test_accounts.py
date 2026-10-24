@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base, get_db
 from app.main import app
 from app.models.media_asset import MediaAsset
+from app.models.user import UserConsent
 from app.services.account_limits import reserve_account_units
 from app.services.image_storage import character_storage_key
 
@@ -28,9 +29,12 @@ def test_registration_sessions_and_data_isolation():
         with patch("app.main.SessionLocal", sessions):
             first, second, stranger = TestClient(app), TestClient(app), TestClient(app)
             assert stranger.get("/characters").status_code == 401
-            assert first.post("/auth/register", json={"email": "FIRST@example.com", "password": "a secure password", "display_name": "First"}).status_code == 201
-            assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second"}).status_code == 201
-            assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First"}).status_code == 409
+            assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": False}).status_code == 422
+            assert first.post("/auth/register", json={"email": "FIRST@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": True}).status_code == 201
+            assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second", "privacy_consent": True}).status_code == 201
+            assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": True}).status_code == 409
+            with sessions() as db:
+                assert db.query(UserConsent).count() == 2
             created = first.post("/characters", json={"name": "Alice"})
             assert created.status_code == 200, created.text
             character_id = created.json()["id"]

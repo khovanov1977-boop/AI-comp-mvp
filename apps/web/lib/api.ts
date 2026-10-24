@@ -88,8 +88,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getMe() { return request<AccountUser>("/auth/me"); }
-export function registerAccount(email: string, password: string, display_name: string) {
-  return request<AccountUser>("/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name }) });
+export function registerAccount(email: string, password: string, display_name: string, privacy_consent: boolean) {
+  return request<AccountUser>("/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name, privacy_consent }) });
 }
 export function loginAccount(email: string, password: string) {
   return request<AccountUser>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });

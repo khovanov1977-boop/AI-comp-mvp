@@ -7,7 +7,7 @@ type AuthContextValue = {
   user: AccountUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (email: string, password: string, name: string, privacyConsent: boolean) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(email: string, password: string) { setUser(await loginAccount(email, password)); }
-  async function register(email: string, password: string, name: string) { setUser(await registerAccount(email, password, name)); }
+  async function register(email: string, password: string, name: string, privacyConsent: boolean) { setUser(await registerAccount(email, password, name, privacyConsent)); }
   async function logout() { await logoutAccount(); setUser(null); }
 
   return <AuthContext.Provider value={{ user, loading, login, register, logout }}>{children}</AuthContext.Provider>;

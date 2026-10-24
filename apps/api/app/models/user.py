@@ -26,6 +26,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     characters = relationship("Character", back_populates="user")
+    consents = relationship("UserConsent", cascade="all, delete-orphan")
+
+
+class UserConsent(Base):
+    __tablename__ = "user_consents"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    version: Mapped[str] = mapped_column(String, primary_key=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class UserSession(Base):

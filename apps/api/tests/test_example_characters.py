@@ -87,8 +87,8 @@ def test_example_route_creates_only_private_character():
                  patch("app.services.example_characters.EXAMPLE_ASSET_ROOT", root / "examples"), \
                  patch("app.services.image_storage.IMAGE_STORAGE_ROOT", root / "private"):
                 first, second = TestClient(app), TestClient(app)
-                assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First"}).status_code == 201
-                assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second"}).status_code == 201
+                assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": True}).status_code == 201
+                assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second", "privacy_consent": True}).status_code == 201
                 assert len(first.get("/examples").json()) == 1
                 mounted = next(route.app for route in app.routes if route.path == "/example-files")
                 with patch.object(mounted, "all_directories", [root / "examples"]):
