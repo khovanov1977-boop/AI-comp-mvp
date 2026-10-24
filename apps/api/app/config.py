@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     venice_scene_image_edit_model: str = "qwen-edit-uncensored"
     venice_video_i2v_model: str = "wan-3-0-reference-to-video"
     venice_video_r2v_model: str = "wan-3-0-reference-to-video"
-    # -1 leaves local development unchanged; a beta instance must set explicit caps.
+    # Optional site-wide request caps; -1 disables them, including in production.
     beta_max_image_outputs: int = -1
     beta_max_video_requests: int = -1
     beta_safe_errors: bool = False

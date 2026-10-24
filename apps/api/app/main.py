@@ -108,8 +108,6 @@ app.mount("/example-files", StaticFiles(directory=EXAMPLE_ASSET_ROOT, check_dir=
 
 @app.on_event("startup")
 def on_startup() -> None:
-    if settings.beta_deployment and (settings.beta_max_image_outputs < 0 or settings.beta_max_video_requests < 0):
-        raise RuntimeError("Beta deployment requires explicit nonnegative paid-request limits")
     Base.metadata.create_all(bind=engine)
     ensure_dev_schema(engine)
     IMAGE_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)

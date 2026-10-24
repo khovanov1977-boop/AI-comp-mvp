@@ -35,8 +35,6 @@ services:
       VENICE_API_KEY: ${VENICE_API_KEY:?Set VENICE_API_KEY in .env.production}
       BETA_DEPLOYMENT: "true"
       BETA_SAFE_ERRORS: "true"
-      BETA_MAX_IMAGE_OUTPUTS: ${BETA_MAX_IMAGE_OUTPUTS:?Set a site-wide image cap}
-      BETA_MAX_VIDEO_REQUESTS: ${BETA_MAX_VIDEO_REQUESTS:?Set a site-wide video cap}
     volumes:
       - app_data:/app/data
     networks:

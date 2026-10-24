@@ -46,6 +46,14 @@ class BetaLimitsTest(unittest.TestCase):
             with self.sessions() as db:
                 self.assertEqual(db.get(BetaUsage, "video").used, 1)
 
+    def test_negative_cap_leaves_site_wide_usage_unrestricted(self):
+        with patch("app.services.beta_limits.settings.beta_max_image_outputs", -1):
+            with self.sessions() as db:
+                reserve_paid_units(db, "image", 100)
+                db.commit()
+            with self.sessions() as db:
+                self.assertIsNone(db.get(BetaUsage, "image"))
+
 
 if __name__ == "__main__":
     unittest.main()
