@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../../components/AuthProvider";
 import { PasswordField } from "../../components/PasswordField";
+import { authDestination } from "../../lib/authDestination";
 
 export default function LoginPage() {
   const { login, user, loading } = useAuth();
@@ -13,10 +14,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!loading && user) router.replace("/characters"); }, [loading, user, router]);
+  useEffect(() => { if (!loading && user) router.replace(authDestination()); }, [loading, user, router]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
-    try { await login(email, password); router.replace("/characters"); }
+    try { await login(email, password); router.replace(authDestination()); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось войти."); }
     finally { setBusy(false); }
   }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../../components/AuthProvider";
 import { PasswordField } from "../../components/PasswordField";
+import { authDestination } from "../../lib/authDestination";
 
 export default function RegisterPage() {
   const { register, user, loading } = useAuth();
@@ -16,7 +17,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { if (!loading && user) router.replace("/characters"); }, [loading, user, router]);
+  useEffect(() => { if (!loading && user) router.replace(authDestination()); }, [loading, user, router]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -28,7 +29,7 @@ export default function RegisterPage() {
     setError("");
     try {
       await register(email, password, name, privacyConsent);
-      router.replace("/characters");
+      router.replace(authDestination());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Не удалось создать аккаунт.");
     } finally {

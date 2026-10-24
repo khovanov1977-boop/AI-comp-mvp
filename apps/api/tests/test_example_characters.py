@@ -87,12 +87,14 @@ def test_example_route_creates_only_private_character():
                  patch("app.services.example_characters.EXAMPLE_ASSET_ROOT", root / "examples"), \
                  patch("app.services.image_storage.IMAGE_STORAGE_ROOT", root / "private"):
                 first, second = TestClient(app), TestClient(app)
-                assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": True}).status_code == 201
-                assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second", "privacy_consent": True}).status_code == 201
                 assert len(first.get("/examples").json()) == 1
                 mounted = next(route.app for route in app.routes if route.path == "/example-files")
                 with patch.object(mounted, "all_directories", [root / "examples"]):
                     assert first.get("/example-files/maria/clothing.png").status_code == 200
+                assert first.post("/examples/maria/copy").status_code == 401
+                assert first.get("/media-files/private/image.png").status_code == 401
+                assert first.post("/auth/register", json={"email": "first@example.com", "password": "a secure password", "display_name": "First", "privacy_consent": True}).status_code == 201
+                assert second.post("/auth/register", json={"email": "second@example.com", "password": "another password", "display_name": "Second", "privacy_consent": True}).status_code == 201
                 created = first.post("/examples/maria/copy")
                 assert created.status_code == 200, created.text
                 character_id = created.json()["id"]

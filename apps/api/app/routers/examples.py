@@ -14,8 +14,7 @@ router = APIRouter(prefix="/examples", tags=["examples"])
 
 
 @router.get("")
-def list_examples(request: Request, db: Session = Depends(get_db)) -> list[dict]:
-    current_user(request, db)
+def list_examples() -> list[dict]:
     return list_ready_examples()
 
 

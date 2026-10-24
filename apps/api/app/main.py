@@ -76,7 +76,10 @@ async def limit_public_auth_requests(request: Request, call_next):
 @app.middleware("http")
 async def protect_private_routes(request: Request, call_next):
     path = request.url.path
-    if request.method == "OPTIONS" or path == "/health" or path in {"/auth/register", "/auth/login"}:
+    public_example = request.method in {"GET", "HEAD"} and (
+        path == "/examples" or path.startswith("/example-files/")
+    )
+    if request.method == "OPTIONS" or path == "/health" or path in {"/auth/register", "/auth/login"} or public_example:
         return await call_next(request)
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "../components/AuthProvider";
+import { ExampleCatalog } from "../components/ExampleCatalog";
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -17,12 +18,12 @@ export default function HomePage() {
         </div>
         <div className="hero-footnote"><span className="sparkle">✳</span> Ваши персонажи и переписки доступны только вам</div>
       </div>
-      <div className="hero-art" aria-hidden="true"><div className="hero-art-glow" /><div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" /><div className="hero-core"><span>AI</span></div><span className="art-caption">место, где начинается история</span></div>
+      <div className="hero-art"><img src="/hero-companions.webp" alt="Четверо собеседников — женщины и мужчины — общаются друг с другом" /><span className="art-caption">У каждого своя история</span></div>
     </section>
-    <section className="landing-features">
-      <div><span className="feature-index">01 / ХАРАКТЕР</span><h2>Создайте того, с кем интересно</h2><p>Настройте личность, манеру общения и внешний вид персонажа.</p></div>
-      <div><span className="feature-index">02 / ДИАЛОГ</span><h2>Персонажи, которые помнят разговор</h2><p>Переписка, голосовые сообщения и ролевые игры с памятью о ваших совместных историях.</p></div>
-      <div><span className="feature-index">03 / МОМЕНТЫ</span><h2>Истории становятся видимыми</h2><p>Создавайте фотографии и короткие видео в рамках ваших сцен.</p></div>
+    <ExampleCatalog embedded />
+    <section className="landing-join">
+      <div><span className="eyebrow">ВАШЕ ПРОДОЛЖЕНИЕ</span><h2>Выберите персонажа и начните свою историю.</h2></div>
+      <Link className="button" href={user ? "/characters" : "/register"}>{user ? "Открыть моих персонажей" : "Присоединиться"} <span aria-hidden="true">↗</span></Link>
     </section>
   </main>;
 }
