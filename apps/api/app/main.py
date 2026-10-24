@@ -14,6 +14,7 @@ from app.services.voice_storage import VOICE_STORAGE_ROOT
 from app.services.image_storage import IMAGE_STORAGE_ROOT
 from app.example_catalog import EXAMPLE_ASSET_ROOT
 from app.services.image_generation import recover_interrupted_jobs
+from app.services.auth_rate_limit import auth_rate_limiter
 from app.services.scene_image_generation import recover_interrupted_scene_images
 from app.services.video_generation import recover_interrupted_videos
 from app.providers.video_venice import VeniceVideoProvider, VeniceVideoError
@@ -52,6 +53,24 @@ async def return_json_for_unhandled_errors(request: Request, call_next):
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Vary"] = "Origin"
         return response
+
+
+@app.middleware("http")
+async def limit_public_auth_requests(request: Request, call_next):
+    if settings.beta_deployment and request.method == "POST":
+        action = request.url.path
+        limits = {"/auth/register": (10, 3600), "/auth/login": (20, 900)}
+        if action in limits:
+            limit, window_seconds = limits[action]
+            client_ip = request.client.host if request.client else "unknown"
+            retry_after = auth_rate_limiter.retry_after(action, client_ip, limit, window_seconds)
+            if retry_after:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Слишком много попыток. Попробуйте позже."},
+                    headers={"Retry-After": str(retry_after)},
+                )
+    return await call_next(request)
 
 
 @app.middleware("http")

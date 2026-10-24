@@ -1,4 +1,4 @@
-"""Small closed-beta hard caps for paid submissions (one API process per instance)."""
+"""Site-wide hard caps for paid submissions (one API process)."""
 
 from threading import RLock
 
@@ -23,7 +23,7 @@ def paid_limit_reason(db: Session, kind: str, units: int = 1) -> str:
         return ""
     usage = db.get(BetaUsage, kind)
     if (usage.used if usage else 0) + units > limit:
-        return "Лимит платных генераций на этом тестовом стенде исчерпан."
+        return "Общий лимит платных генераций на сайте исчерпан."
     return ""
 
 
@@ -44,6 +44,6 @@ def reserve_paid_units(db: Session, kind: str, units: int) -> None:
         db.add(usage)
         db.flush()
     if usage.used + units > limit:
-        raise HTTPException(429, "Лимит платных генераций на этом тестовом стенде исчерпан.")
+        raise HTTPException(429, "Общий лимит платных генераций на сайте исчерпан.")
     usage.used += units
     db.flush()

@@ -8,7 +8,7 @@ An AI Companion web app with personal accounts, persistent characters, structure
 
 Registration at `/register` is open and requires an email address and a password of at least 10 characters. Sessions use an HttpOnly cookie and expire after 30 days. Chats, characters, memories, generated media files, and video jobs are restricted to the owning account. The account page displays lifetime beta allowances: 10 image outputs, 3 video requests, 500 text replies and 50 voice replies from characters. The counters survive deletion of characters and chats. Existing demo data remains in the database under the legacy demo user and is not exposed to newly registered accounts.
 
-Open registration allows a person to create additional accounts and receive additional allowances. Before a public launch, configure the existing global `BETA_MAX_IMAGE_OUTPUTS` and `BETA_MAX_VIDEO_REQUESTS` as a site-wide ceiling, plus an upstream Venice spending cap. This project is not deployed by this change.
+Open registration allows a person to create additional accounts and receive additional allowances. Before a public launch, configure the existing global `BETA_MAX_IMAGE_OUTPUTS` and `BETA_MAX_VIDEO_REQUESTS` as a site-wide ceiling, plus an upstream Venice spending cap. The single-site VPS setup is documented in `docs/production-deployment.md`; preparing it does not publish the site.
 
 ## Stack
 

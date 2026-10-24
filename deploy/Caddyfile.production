@@ -1,0 +1,22 @@
+aicomp.fun {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=31536000"
+    }
+
+    route {
+        @private path /api/debug /api/debug/* /api/docs /api/docs/* /api/redoc /api/redoc/* /api/openapi.json
+        respond @private 404
+
+        handle_path /api/* {
+            reverse_proxy api:8000
+        }
+
+        handle {
+            reverse_proxy web:3000
+        }
+    }
+}

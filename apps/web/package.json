@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@ai-companion/shared": "file:../../packages/shared",
-    "next": "15.5.26",
+    "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

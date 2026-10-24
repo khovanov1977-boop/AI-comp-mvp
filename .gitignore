@@ -1,5 +1,6 @@
 .env
 .env.beta
+.env.production
 deploy/*.env
 .venv/
 __pycache__/
@@ -12,5 +13,6 @@ node_modules/
 *.tsbuildinfo
 dist/
 coverage/
+backups/
 tts-samples/
 .DS_Store
