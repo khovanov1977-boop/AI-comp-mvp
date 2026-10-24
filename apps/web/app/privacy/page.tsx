@@ -10,7 +10,7 @@ export default function PrivacyPage() {
     <p className="legal-date">Редакция от 24 октября 2026 года</p>
 
     <section><h2>Кто обрабатывает данные</h2>
-      <p>Оператор сайта aicomp.fun — Хованов Алексей, Россия. По вопросам обработки данных и удаления аккаунта пишите на <a href="mailto:xaa1@rambler.ru">xaa1@rambler.ru</a>.</p>
+      <p>Оператор сайта aicomp.fun — ООО «АИКОМП», Россия. По вопросам обработки данных и удаления аккаунта пишите на <a href="mailto:xaa1@rambler.ru">xaa1@rambler.ru</a>.</p>
     </section>
 
     <section><h2>Какие данные используются</h2>
