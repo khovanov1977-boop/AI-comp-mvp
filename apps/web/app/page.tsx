@@ -22,7 +22,7 @@ export default function HomePage() {
     </section>
     <ExampleCatalog embedded />
     <section className="landing-join">
-      <div><span className="eyebrow">ВАШЕ ПРОДОЛЖЕНИЕ</span><h2>Выберите персонажа и начните свою историю.</h2></div>
+      <div><span className="eyebrow">ВАШЕ ПРОДОЛЖЕНИЕ</span><h2>Выберите персонажа или создайте собственного и начните свою историю</h2></div>
       <Link className="button" href={user ? "/characters" : "/register"}>{user ? "Открыть моих персонажей" : "Присоединиться"} <span aria-hidden="true">↗</span></Link>
     </section>
   </main>;

@@ -77,7 +77,9 @@ async def limit_public_auth_requests(request: Request, call_next):
 async def protect_private_routes(request: Request, call_next):
     path = request.url.path
     public_example = request.method in {"GET", "HEAD"} and (
-        path == "/examples" or path.startswith("/example-files/")
+        path == "/examples" or (
+            path.startswith("/example-files/") and not path.endswith("/body.png")
+        )
     )
     if request.method == "OPTIONS" or path == "/health" or path in {"/auth/register", "/auth/login"} or public_example:
         return await call_next(request)

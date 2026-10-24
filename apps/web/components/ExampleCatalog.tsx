@@ -10,9 +10,14 @@ import { exampleRoleName } from "../lib/exampleRole";
 
 const stageNames = { face: "Лицо", body: "Фигура", clothing: "Одежда" };
 const stages = ["face", "body", "clothing"] as const;
+type Stage = typeof stages[number];
+
+function visibleStages(item: ExampleCharacter, signedIn: boolean): Stage[] {
+  return stages.filter((stage) => (signedIn || stage !== "body") && !!item.images[stage]);
+}
 
 export function ExampleCatalog({ embedded = false }: { embedded?: boolean }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [examples, setExamples] = useState<ExampleCharacter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,14 +26,18 @@ export function ExampleCatalog({ embedded = false }: { embedded?: boolean }) {
   const [opened, setOpened] = useState<{ slug: string; stage: typeof stages[number] } | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
     let active = true;
+    setLoading(true);
+    setExamples([]);
+    setError("");
     listExamples().then((values) => {
       if (active) setExamples(values.sort((a, b) => a.name.localeCompare(b.name, "ru")));
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : "Не удалось загрузить персонажей.");
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [authLoading, user?.id]);
 
   useEffect(() => {
     if (!examples.length || !window.location.hash) return;
@@ -51,7 +60,7 @@ export function ExampleCatalog({ embedded = false }: { embedded?: boolean }) {
 
   const activeExample = examples.find((item) => item.slug === opened?.slug);
   const viewerItems: ChatMedia[] = activeExample
-    ? stages.map((stage) => ({ id: stage, kind: "image", url: activeExample.images[stage] })) : [];
+    ? visibleStages(activeExample, !!user).map((stage) => ({ id: stage, kind: "image", url: activeExample.images[stage]! })) : [];
   const viewerMedia = viewerItems.find((item) => item.id === opened?.stage);
 
   return <section className={embedded ? "example-catalog landing-catalog" : "example-catalog"} id="examples">
@@ -64,15 +73,17 @@ export function ExampleCatalog({ embedded = false }: { embedded?: boolean }) {
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {loading ? <div className="page-loading"><span className="loading-orb" />Загружаем персонажей…</div> : examples.length ? <div className="example-grid">
-      {examples.map((item) => <article className="example-card" id={item.slug} key={item.slug}>
+      {examples.map((item) => {
+        const shownStages = visibleStages(item, !!user);
+        return <article className="example-card" id={item.slug} key={item.slug}>
         <button className="example-cover" type="button" onClick={() => setOpened({ slug: item.slug, stage: "clothing" })} aria-label={`Увеличить образ персонажа ${item.name}`}>
           <img loading="lazy" src={getApiAssetUrl(item.images.clothing)} alt={`Образ персонажа ${item.name}`} />
           <span>Увеличить ↗</span>
         </button>
         <div className="example-card-content"><span className="eyebrow">{item.visual_label}</span><h2>{item.name}, {item.age}</h2><p className="example-role">{exampleRoleName(item)}</p><p>{item.personality_description}</p>
-          <div className="example-stage-gallery" aria-label={`Три изображения персонажа ${item.name}`}>
-            {stages.map((stage) => <button key={stage} type="button" onClick={() => setOpened({ slug: item.slug, stage })} aria-label={`Увеличить: ${stageNames[stage]}, ${item.name}`}>
-              <img loading="lazy" src={getApiAssetUrl(item.images[stage])} alt="" /><span>{stageNames[stage]}</span>
+          <div className={`example-stage-gallery${shownStages.length === 2 ? " two-images" : ""}`} aria-label={`${shownStages.length} изображения персонажа ${item.name}`}>
+            {shownStages.map((stage) => <button className={stage === "clothing" ? "clothing" : undefined} key={stage} type="button" onClick={() => setOpened({ slug: item.slug, stage })} aria-label={`Увеличить: ${stageNames[stage]}, ${item.name}`}>
+              <img loading="lazy" src={getApiAssetUrl(item.images[stage]!)} alt="" /><span>{stageNames[stage]}</span>
             </button>)}
           </div>
           <details className="example-details"><summary>Посмотреть анкету</summary><dl>
@@ -86,7 +97,7 @@ export function ExampleCatalog({ embedded = false }: { embedded?: boolean }) {
           {user ? <button className="button" type="button" disabled={!!copying} onClick={() => void createCopy(item.slug)}>{copying === item.slug ? "Создаём копию…" : "Создать и общаться ↗"}</button>
             : <Link className="button" href={`/register?example=${encodeURIComponent(item.slug)}`}>Зарегистрироваться и общаться ↗</Link>}
         </div>
-      </article>)}
+      </article>})}
     </div> : <div className="empty-state"><h3>Персонажи готовятся</h3><p>Они появятся здесь после проверки изображений.</p></div>}
     {viewerMedia && activeExample ? <ChatMediaViewer media={viewerMedia} items={viewerItems} onNavigate={(media) => setOpened({ slug: activeExample.slug, stage: media.id as typeof stages[number] })} onClose={() => setOpened(null)} /> : null}
   </section>;

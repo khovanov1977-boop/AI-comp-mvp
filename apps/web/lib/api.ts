@@ -31,7 +31,7 @@ export type ExampleCharacter = {
   likes: string;
   dislikes: string;
   appearance: AppearanceSettings;
-  images: Record<"face" | "body" | "clothing", string>;
+  images: Record<"face" | "clothing", string> & Partial<Record<"body", string>>;
 };
 
 export class ApiError extends Error {

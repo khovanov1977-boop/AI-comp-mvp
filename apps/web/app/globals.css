@@ -1326,7 +1326,7 @@ h1, h2, h3, p { margin-top: 0; }
 .example-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: stretch; gap: 22px; }
 .example-card { display: flex; flex-direction: column; overflow: hidden; scroll-margin-top: 24px; border: 1px solid var(--line); border-radius: 20px; background: #fffdfa; box-shadow: 0 14px 40px rgb(36 24 58 / 5%); }
 .example-cover { position: relative; display: block; width: 100%; height: 320px; padding: 0; border: 0; background: #e7e0eb; cursor: zoom-in; }
-.example-cover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
+.example-cover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 .example-cover span { position: absolute; right: 12px; bottom: 12px; padding: 7px 10px; border-radius: 8px; background: rgb(34 25 46 / 78%); color: white; font-size: 11px; font-weight: 700; }
 .example-card-content { display: flex; flex: 1; flex-direction: column; gap: 12px; padding: 22px; }
 .example-card-content h2 { margin: 0; font-family: Georgia, serif; font-size: 29px; font-weight: 400; }
@@ -1334,8 +1334,10 @@ h1, h2, h3, p { margin-top: 0; }
 .example-card-content .example-role { color: var(--accent-dark); font-weight: 700; }
 .example-card-content > .button { width: 100%; margin-top: auto; }
 .example-stage-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.example-stage-gallery.two-images { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .example-stage-gallery button { position: relative; overflow: hidden; height: 96px; padding: 0; border: 0; border-radius: 9px; background: #eee8f0; cursor: zoom-in; }
 .example-stage-gallery img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.example-stage-gallery button.clothing img { object-position: center top; }
 .example-stage-gallery span { position: absolute; right: 0; bottom: 0; left: 0; padding: 5px; background: rgb(34 25 46 / 73%); color: white; font-size: 10px; font-weight: 700; text-align: center; }
 .example-details { border-top: 1px solid var(--line); padding-top: 12px; }
 .example-details summary { color: var(--accent-dark); cursor: pointer; font-size: 13px; font-weight: 700; }
