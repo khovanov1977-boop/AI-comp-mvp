@@ -23,6 +23,7 @@ from app.schemas.video import VideoQuoteRequest, VideoQuoteRead, VideoRequest
 from app.services.image_storage import ImageStorageError, read_image
 from app.services.video_storage import delete_video, save_video
 from app.services.beta_limits import paid_limit_reason, reserve_paid_units
+from app.services.account_limits import reserve_account_units
 from app.services.video_prompt import (
     SceneTranslator, VeniceVideoSceneTranslator, VideoPromptError,
     VideoPromptFormatError, prepare_video_prompt, split_video_prompt,
@@ -143,6 +144,7 @@ def submit_video(db: Session, character_id: str, payload: VideoRequest,
         _, provider_prompt = _prompts(payload, translator or VeniceVideoSceneTranslator())
     except VideoPromptError as exc:
         raise HTTPException(503, str(exc)) from exc
+    reserve_account_units(db, db.get(Character, character_id).user_id, "videos_count", 1)
     reserve_paid_units(db, "video", 1)
     user_message = Message(character_id=character_id, role="user", content=prompt)
     assistant_message = Message(character_id=character_id, role="assistant", content="Готовлю видео…",

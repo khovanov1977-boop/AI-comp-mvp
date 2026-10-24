@@ -6,10 +6,13 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.models import *  # noqa: F403
-from app.routers import appearance, characters, chat, debug, health, limits, media, memories, scenes, users, video, voice
+from app.routers import appearance, auth, characters, chat, debug, examples, health, limits, media, memories, scenes, users, video, voice
+from app.security import SESSION_COOKIE, check_owner, get_session_user
+from fastapi import HTTPException
 from app.schema_sync import ensure_dev_schema
 from app.services.voice_storage import VOICE_STORAGE_ROOT
 from app.services.image_storage import IMAGE_STORAGE_ROOT
+from app.example_catalog import EXAMPLE_ASSET_ROOT
 from app.services.image_generation import recover_interrupted_jobs
 from app.services.scene_image_generation import recover_interrupted_scene_images
 from app.services.video_generation import recover_interrupted_videos
@@ -50,6 +53,28 @@ async def return_json_for_unhandled_errors(request: Request, call_next):
             response.headers["Vary"] = "Origin"
         return response
 
+
+@app.middleware("http")
+async def protect_private_routes(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or path == "/health" or path in {"/auth/register", "/auth/login"}:
+        return await call_next(request)
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        if origin and origin not in ALLOWED_ORIGINS:
+            return JSONResponse(status_code=403, content={"detail": "Недопустимый источник запроса."})
+    try:
+        with SessionLocal() as db:
+            user = get_session_user(db, request.cookies.get(SESSION_COOKIE, ""))
+            if not user:
+                raise HTTPException(401, "Войдите в аккаунт.")
+            request.state.user_id = user.id
+            if not path.startswith("/auth/"):
+                await check_owner(request, db, user.id)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
@@ -59,6 +84,7 @@ app.add_middleware(
 )
 app.mount("/voice-files", StaticFiles(directory=VOICE_STORAGE_ROOT, check_dir=False), name="voice-files")
 app.mount("/media-files", StaticFiles(directory=IMAGE_STORAGE_ROOT, check_dir=False), name="media-files")
+app.mount("/example-files", StaticFiles(directory=EXAMPLE_ASSET_ROOT, check_dir=False), name="example-files")
 
 
 @app.on_event("startup")
@@ -88,7 +114,9 @@ def _resume_video(job_id: str) -> None:
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(characters.router)
+app.include_router(examples.router)
 app.include_router(appearance.router)
 app.include_router(chat.router)
 app.include_router(debug.router)

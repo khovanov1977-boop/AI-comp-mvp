@@ -27,6 +27,7 @@ from app.providers.image_openrouter import GeneratedImage, ImageProviderError
 from app.routers.appearance import get_image_session_factory
 from app.schemas.appearance import AppearanceGenerate, AppearanceSettings
 from app.services.image_generation import recover_interrupted_jobs, run_generation, submit_generation
+from app.services.account_limits import reserve_account_units, usage_snapshot
 from app.services.image_prompt_compiler import ImagePromptCompiler, ImagePromptCompilerError
 from app.services.image_storage import resolve_image_file, save_image
 
@@ -78,6 +79,14 @@ class AppearanceTestCase(unittest.TestCase):
             db.add_all([character, other])
             db.commit()
             self.character_id, self.other_id = character.id, other.id
+            self.user_id = user.id
+
+        session_patch = patch("app.main.SessionLocal", self.sessions)
+        auth_patch = patch("app.main.get_session_user", side_effect=lambda db, _token: db.get(User, self.user_id))
+        session_patch.start()
+        auth_patch.start()
+        self.addCleanup(session_patch.stop)
+        self.addCleanup(auth_patch.stop)
 
         def override_db():
             with self.sessions() as db:
@@ -363,7 +372,7 @@ class AppearanceTestCase(unittest.TestCase):
 
     def test_missing_character_is_404(self):
         self.assertEqual(self.client.get("/characters/missing/appearance").status_code, 404)
-        self.assertEqual(self.client.put("/characters/missing/appearance", json={}).status_code, 405)
+        self.assertEqual(self.client.put("/characters/missing/appearance", json={}).status_code, 404)
 
     def enable_images(self):
         patcher = patch.multiple(settings, image_provider="openrouter", llm_api_key="unit-test-key")
@@ -423,6 +432,36 @@ class AppearanceTestCase(unittest.TestCase):
         self.assertEqual(provider.generate.call_count, 2)
         self.assertEqual(self.client.put(self.path, json={}).status_code, 405)
 
+    def test_rejected_clothing_count_keeps_appearance_revision_and_allows_one_variant(self):
+        self.enable_images()
+        self.assertEqual(self.configure().status_code, 200)
+        self.assertEqual(self.choose("face", self.add_candidate("face")).status_code, 200)
+        self.assertEqual(self.choose("body", self.add_candidate("body")).status_code, 200)
+        self.assertEqual(self.publish().status_code, 200)
+        with self.sessions() as db:
+            reserve_account_units(db, self.user_id, "images_count", 9)
+            db.commit()
+        before = self.read()
+        payload = {
+            "expected_revision": before["revision"],
+            "settings": {**before["settings"], "clothing": "blue coat"},
+        }
+        rejected = self.client.post(f"{self.path}/generate/clothing", json={
+            **payload, "request_id": str(uuid4()), "count": 2,
+        })
+        self.assertEqual(rejected.status_code, 429, rejected.text)
+        self.assertIn("Доступно изображений: 1", rejected.json()["detail"])
+        after = self.read()
+        self.assertEqual(after["revision"], before["revision"])
+        self.assertEqual(after["settings"], before["settings"])
+        self.assertEqual(after["counts"], before["counts"])
+        self.assertEqual(after["jobs"], before["jobs"])
+        with patch("app.services.image_generation.create_image_provider", return_value=self.fake_provider()):
+            accepted = self.client.post(f"{self.path}/generate/clothing", json={
+                **payload, "request_id": str(uuid4()), "count": 1,
+            })
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+
     def test_duplicate_submissions_and_worker_execution_charge_once(self):
         self.enable_images()
         self.configure()
@@ -469,7 +508,7 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertEqual(job.input_context["settings"]["face_adjustment"], "allow")
             self.assertIn("subtly adjust facial fullness", job.prompt)
 
-    def test_venice_pair_uses_only_latest_reference_and_keeps_openrouter_settings(self):
+    def test_venice_stage_models_use_only_latest_reference(self):
         self.configure({"gender": "female", "glasses": False, "hair_color": "рыжие", "eye_color": "зеленые"})
         self.complete()
         with patch.multiple(settings, image_provider="venice", venice_api_key="unit-test-venice-key"):
@@ -477,6 +516,7 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertTrue(state["generation_available"])
             self.assertEqual(state["image_model"], "grok-imagine-image-2-0")
             self.assertEqual(state["image_edit_model"], "grok-imagine-image-2-0-edit")
+            self.assertEqual(state["image_clothing_model"], "qwen-edit-uncensored")
             provider = self.fake_provider()
             face_job, _ = self.submit_job("face")
             run_generation(face_job, self.sessions, provider)
@@ -492,7 +532,7 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
             clothing_job, _ = self.submit_job("clothing")
             run_generation(clothing_job, self.sessions, provider)
-            self.assertEqual(provider.generate.call_args.kwargs["model"], "grok-imagine-image-2-0-edit")
+            self.assertEqual(provider.generate.call_args.kwargs["model"], "qwen-edit-uncensored")
             self.assertEqual(len(provider.generate.call_args.kwargs["references"]), 1)
             self.assertIn("selected body image", provider.generate.call_args.kwargs["prompt"])
             self.assertIn("vivid natural copper-red", provider.generate.call_args.kwargs["prompt"])
@@ -514,13 +554,13 @@ class AppearanceTestCase(unittest.TestCase):
             self.assertTrue(state["generation_available"])
             self.assertEqual(state["image_model"], "x-ai/grok-imagine-image-2.0")
             self.assertEqual(state["image_edit_model"], "x-ai/grok-imagine-image-2.0")
-            self.assertEqual(state["image_clothing_model"], "grok-imagine-image-2-0-edit")
+            self.assertEqual(state["image_clothing_model"], "qwen-edit-uncensored")
             provider = self.fake_provider()
             with patch("app.services.image_generation.create_image_provider", return_value=provider) as factory:
                 for stage, expected_provider, expected_model, reference_count in (
                     ("face", "openrouter", "x-ai/grok-imagine-image-2.0", 0),
                     ("body", "openrouter", "x-ai/grok-imagine-image-2.0", 1),
-                    ("clothing", "venice", "grok-imagine-image-2-0-edit", 1),
+                    ("clothing", "venice", "qwen-edit-uncensored", 1),
                 ):
                     job_id, _ = self.submit_job(stage)
                     with self.sessions() as db:
@@ -536,7 +576,7 @@ class AppearanceTestCase(unittest.TestCase):
                 self.assertEqual([asset.provider for asset in assets], [
                     "openrouter:x-ai/grok-imagine-image-2.0",
                     "openrouter:x-ai/grok-imagine-image-2.0",
-                    "venice:grok-imagine-image-2-0-edit",
+                    "venice:qwen-edit-uncensored",
                 ])
 
     def test_hybrid_retry_keeps_original_provider_after_mode_change(self):
@@ -596,12 +636,16 @@ class AppearanceTestCase(unittest.TestCase):
         self.assertEqual(state["jobs"][0]["status"], "partial")
         self.assertEqual([o["status"] for o in state["jobs"][0]["outputs"]], ["completed", "failed", "not_started"])
         self.assertEqual(provider.generate.call_count, 2)
+        with self.sessions() as db:
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 1)
         successful_id = state["candidates"][0]["id"]
         retry_id, _ = self.submit_job(retry_of=job_id)
         retry_provider = self.fake_provider()
         run_generation(retry_id, self.sessions, retry_provider)
         self.assertEqual(retry_provider.generate.call_count, 2)
         self.assertEqual(len(self.read()["candidates"]), 3)
+        with self.sessions() as db:
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 3)
         self.assertIn(successful_id, [c["id"] for c in self.read()["candidates"]])
         with self.assertRaises(HTTPException):
             self.submit_job(retry_of=job_id)
@@ -619,6 +663,20 @@ class AppearanceTestCase(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.get(ImageGenerationJob, retry_id).prompt,
                              db.get(ImageGenerationJob, job_id).prompt)
+
+    def test_rejected_prompt_returns_quota_and_cannot_be_retried_unchanged(self):
+        self.enable_images()
+        self.configure(counts={"face": 2, "body": 1, "clothing": 1})
+        job_id, _ = self.submit_job()
+        provider = self.fake_provider()
+        provider.generate.side_effect = ImageProviderError("Модель отклонила запрос (HTTP 422).")
+        run_generation(job_id, self.sessions, provider)
+        self.assertEqual(provider.generate.call_count, 1)
+        with self.sessions() as db:
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 0)
+        with self.assertRaises(HTTPException) as caught:
+            self.submit_job(retry_of=job_id)
+        self.assertEqual(caught.exception.status_code, 409)
 
     def test_unknown_outcome_requires_explicit_retry_confirmation(self):
         self.enable_images()
@@ -649,6 +707,8 @@ class AppearanceTestCase(unittest.TestCase):
         job = self.read()["jobs"][0]
         self.assertEqual(job["status"], "interrupted")
         self.assertEqual([item["status"] for item in job["outputs"]], ["unknown", "not_started"])
+        with self.sessions() as db:
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 1)
         provider = self.fake_provider()
         run_generation(job_id, self.sessions, provider)
         provider.generate.assert_not_called()

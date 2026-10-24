@@ -44,6 +44,8 @@ def _error_diagnostic(response: httpx.Response, api_key: str) -> dict[str, str |
         return diagnostic
     if not isinstance(body, dict):
         return diagnostic
+    if isinstance(body.get("code"), str):
+        diagnostic["code"] = _safe_error_text(body["code"], api_key)
     error = body.get("error")
     if isinstance(error, str):
         diagnostic["message"] = _safe_error_text(error, api_key)

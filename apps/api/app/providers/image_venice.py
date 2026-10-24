@@ -49,6 +49,8 @@ def venice_configuration_error(config: Settings = settings) -> str:
         return "Не настроен доступ к сервису создания изображений."
     if (config.venice_image_model.strip(), config.venice_image_edit_model.strip()) not in IMAGE_MODEL_PAIRS:
         return "Некорректно настроен способ создания изображений."
+    if config.venice_clothing_image_edit_model.strip() not in EDIT_MODELS:
+        return "Некорректно настроена модель создания одежды."
     if not 10 <= config.image_timeout_seconds <= 600:
         return "Некорректно настроено время ожидания создания изображений."
     return ""
@@ -101,8 +103,17 @@ class VeniceImageProvider:
                                timeout=self.timeout, follow_redirects=False) as response:
                 if response.status_code >= 400:
                     diagnostic = _error_diagnostic(response, self.api_key)
+                    if response.status_code == 422:
+                        code = diagnostic.get("code")
+                        if code == "IMAGE_TOO_LARGE":
+                            message = "Референс слишком велик для модели (HTTP 422). Выберите другое исходное изображение."
+                        else:
+                            message = ("Модель отклонила запрос изображения (HTTP 422). "
+                                       "Измените описание или референс и создайте новые варианты; повтор без изменений может снова завершиться ошибкой.")
+                    else:
+                        message = f"Ошибка создания изображения (HTTP {response.status_code}). Автоповтор отключён."
                     raise ImageProviderError(
-                        f"Ошибка создания изображения (HTTP {response.status_code}). Автоповтор отключён.",
+                        message,
                         unknown_outcome=response.status_code >= 500, diagnostic=diagnostic)
                 if response.status_code != 200:
                     raise ImageProviderError("Неожиданный ответ при создании изображения; повтор не выполнен.", unknown_outcome=True)

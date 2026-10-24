@@ -19,6 +19,7 @@ from app.providers.image_backend import create_image_provider, image_configurati
 from app.providers.image_openrouter import ImageProviderError
 from app.providers.image_venice import EDIT_MODELS
 from app.services.beta_limits import paid_limit_reason, reserve_paid_units
+from app.services.account_limits import release_image_units, reserve_account_units
 from app.services.image_generation import GENERATION_SLOTS, IMAGE_COMMIT_LOCK
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
 from app.services.scene_image_prompt import SceneImagePromptCompiler, SceneImagePromptError
@@ -85,6 +86,7 @@ def submit_scene_image(db: Session, character: Character, request: str, request_
         compiled = (compiler or SceneImagePromptCompiler()).compile(scene_data, dialogue, request)
     except SceneImagePromptError as exc:
         raise HTTPException(503, str(exc)) from exc
+    reserve_account_units(db, character.user_id, "images_count", 1)
     reserve_paid_units(db, "image", 1)
     user_message = Message(character_id=character.id, role="user", content=request)
     assistant_message = Message(character_id=character.id, role="assistant", content="Готовлю фото…",
@@ -122,6 +124,8 @@ def _finish(job_id: str, session_factory, status: str, error: str) -> None:
         job.status = status
         job.error = error
         job.active_key = None
+        if status == "failed" and (character := db.get(Character, job.character_id)):
+            release_image_units(db, character.user_id, 1)
         db.commit()
 
 
@@ -144,6 +148,8 @@ def run_scene_image(job_id: str, session_factory, provider=None) -> None:
             result = (provider or create_image_provider("venice")).generate(
                 model=model, prompt=prompt, references=[reference])
         except ImageProviderError as exc:
+            if exc.diagnostic:
+                logger.warning("scene_image_provider_error model=%s diagnostic=%s", model, exc.diagnostic)
             _finish(job_id, session_factory, "unknown" if exc.unknown_outcome else "failed", str(exc))
             return
         except (ImageStorageError, OSError) as exc:
@@ -198,4 +204,6 @@ def recover_interrupted_scene_images(db: Session) -> None:
             message.image_generation_status = job.status
             message.image_generation_error = job.error
             message.content = "Фото не создано. " + job.error
+        if prior == "queued" and (character := db.get(Character, job.character_id)):
+            release_image_units(db, character.user_id, 1)
     db.commit()

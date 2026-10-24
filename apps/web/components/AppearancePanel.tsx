@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AppearanceCounts, AppearanceSettings, AppearanceStage, Character, CharacterAppearance, ImageGenerationJob } from "@ai-companion/shared";
-import { ApiError, generateAppearance, getApiAssetUrl, getAppearance, getCharacter, publicErrorText, publishAppearance, selectAppearanceCandidate } from "../lib/api";
+import { ApiError, generateAppearance, getAccountLimits, getApiAssetUrl, getAppearance, getCharacter, publicErrorText, publishAppearance, selectAppearanceCandidate } from "../lib/api";
 import type { AppearanceGenerationInput } from "../lib/api";
 
-const stages: Array<{ id: AppearanceStage; label: string; short: string }> = [
-  { id: "face", label: "1. Лицо", short: "лица" },
-  { id: "body", label: "2. Фигура", short: "фигуры" },
-  { id: "clothing", label: "3. Одежда", short: "одежды" },
+const stages: Array<{ id: AppearanceStage; label: string }> = [
+  { id: "face", label: "1. Лицо" },
+  { id: "body", label: "2. Фигура" },
+  { id: "clothing", label: "3. Одежда" },
 ];
 const styles = [
   ["photo", "Реалистичный / фото"], ["cartoon", "Мультяшный"], ["anime", "Аниме"],
@@ -19,12 +19,32 @@ const appearanceTypes = [
   ["european", "Европейская"], ["african", "Африканская"], ["asian", "Азиатская"],
   ["arab", "Арабская"], ["latin_american", "Латиноамериканская"], ["caucasus", "Кавказская"],
 ];
+const otherDetails = {
+  face: {
+    label: "Прочее о лице",
+    hint: "Например: длина и форма носа, веснушки, родинки, татуировки, волосы на лице или особенности кожи.",
+  },
+  body: {
+    label: "Прочее о фигуре",
+    hint: "Например: рост, осанка, телосложение, татуировки, шрамы или особенности рук и плеч.",
+  },
+  clothing: {
+    label: "Прочее об одежде",
+    hint: "Например: материалы, цветовая гамма, обувь, украшения, аксессуары или детали посадки.",
+  },
+};
 const outputLabels = { queued: "Ожидает отправки", running: "Генерируется", completed: "Готов", failed: "Ошибка", unknown: "Результат неизвестен", not_started: "Не отправлен" };
 type PendingSubmission = { stage: AppearanceStage; input: AppearanceGenerationInput };
 type Preview = { url: string; alt: string };
 
-export function AppearancePanel({ character, onCharacterChange }: { character: Character; onCharacterChange: (character: Character) => void }) {
-  const [open, setOpen] = useState(false);
+export function AppearancePanel({ character, onCharacterChange, onAppearanceChange, initialOpen = false, mode = "editing" }: {
+  character: Character;
+  onCharacterChange: (character: Character) => void;
+  onAppearanceChange?: (appearance: CharacterAppearance) => void;
+  initialOpen?: boolean;
+  mode?: "creation" | "editing";
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const [appearance, setAppearance] = useState<CharacterAppearance | null>(null);
   const [settings, setSettings] = useState<Partial<AppearanceSettings>>({});
   const [counts, setCounts] = useState<AppearanceCounts>({ face: 1, body: 1, clothing: 1 });
@@ -36,6 +56,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
   const [pollError, setPollError] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [remainingImages, setRemainingImages] = useState<number | null>(null);
   const submitting = useRef(false);
   const pendingKey = `appearance-request:${character.id}`;
   const running = appearance?.jobs.some((job) => job.status === "queued" || job.status === "running") ?? false;
@@ -72,9 +93,16 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
 
   function accept(value: CharacterAppearance) {
     setAppearance(value);
+    onAppearanceChange?.(value);
     setSettings(value.settings);
     setCounts(value.counts);
     setConfirmGender(false);
+  }
+
+  function refreshImageAllowance() {
+    getAccountLimits().then(({ images_count }) =>
+      setRemainingImages(Math.max(0, images_count.limit - images_count.used)),
+    ).catch(() => setRemainingImages(null));
   }
 
   useEffect(() => {
@@ -82,6 +110,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
     let active = true;
     setBusy(true);
     setError("");
+    refreshImageAllowance();
     getAppearance(character.id).then((value) => { if (active) accept(value); })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Не удалось загрузить образ."); })
       .finally(() => { if (active) setBusy(false); });
@@ -98,6 +127,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
         if (!active) return;
         setAppearance(value);
         setPollError("");
+        if (running && !value.jobs.some((job) => job.status === "queued" || job.status === "running")) refreshImageAllowance();
         if (pendingSubmission && value.jobs.some((job) => job.id === pendingSubmission.input.request_id)) rememberPending(null);
       } catch {
         if (active) setPollError("Не удалось обновить статус. Генерация могла продолжиться; новый запрос автоматически не отправляется.");
@@ -132,6 +162,9 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
   const needsFaceAdjustmentChoice = stage === "body" && (settings.body_type === "full" || settings.body_type === "fat")
     && !settings.face_adjustment;
   const retryCount = latestJob?.outputs.filter((item) => item.status !== "completed").length ?? 0;
+  const rejectedByModel = latestJob?.outputs.some((item) => item.error.includes("HTTP 422")) ?? false;
+  const countExceedsAllowance = remainingImages !== null && counts[stage] > remainingImages;
+  const retryExceedsAllowance = remainingImages !== null && retryCount > remainingImages;
   const selectedCount = stages.filter(({ id }) => appearance?.selections[id]).length;
   const selectionsCurrent = stages.every(({ id }) => !appearance?.selections[id]
     || appearance.candidates.some((candidate) => candidate.id === appearance.selections[id] && candidate.current));
@@ -161,11 +194,17 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
       const value = await generateAppearance(character.id, submission.stage, submission.input);
       accept(value);
       rememberPending(null);
+      refreshImageAllowance();
       setNotice("Задание принято. Результаты появятся ниже; страницу можно перезагрузить.");
     } catch (reason) {
       if (reason instanceof ApiError
         && (reason.status < 500 || reason.code === "image_prompt_compilation_failed")) rememberPending(null);
       setError(reason instanceof Error ? reason.message : "Не удалось отправить запрос.");
+      refreshImageAllowance();
+      // A previous server version could advance the appearance revision before
+      // rejecting a quota-limited request. Refresh the revision without losing
+      // the user's edited form, so a corrected count can be submitted.
+      getAppearance(character.id).then(setAppearance).catch(() => undefined);
     } finally { submitting.current = false; setBusy(false); }
   }
 
@@ -176,7 +215,10 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
     setNotice("");
     try {
       const value = await work();
-      if (preserveForm) setAppearance(value); else accept(value);
+      if (preserveForm) {
+        setAppearance(value);
+        onAppearanceChange?.(value);
+      } else accept(value);
       setNotice(message);
       if (refreshCharacter) onCharacterChange(await getCharacter(character.id));
     } catch (reason) {
@@ -212,7 +254,7 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
   return (
     <section className="appearance-panel stack" aria-label="Внешность персонажа">
       <button className="button" type="button" aria-expanded={open} onClick={() => setOpen(!open)} disabled={busy}>
-        {open ? "Свернуть настройки образа" : "Создать изображение персонажа"}
+        {open ? "Свернуть редактор внешности" : mode === "creation" ? "Создать изображение персонажа" : "Изменить внешность персонажа"}
       </button>
       {open && <div className="stack">
         <div className="appearance-intro">
@@ -289,26 +331,27 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
                 <textarea className="textarea" maxLength={1000} placeholder="Не задана" value={settings.clothing ?? ""} onChange={(event) => change("clothing", event.target.value || undefined)} />
                 <span className="muted">Позже одежда может меняться по контексту диалога.</span>
               </label>}
-              <details className="appearance-more" open>
-                <summary>Дополнительно</summary>
-                <label className="field"><span className="label">Другие детали {stages.find(({ id }) => id === stage)?.short}</span>
-                  <textarea className="textarea" maxLength={1000} placeholder="Например: веснушки, татуировка, особенности силуэта или аксессуары" value={settings[detailsKey] ?? ""} onChange={(event) => change(detailsKey, event.target.value || undefined)} />
-                </label>
-              </details>
-              <label className="field"><span className="label">Количество вариантов на этом этапе</span>
+              <label className="field"><span className="label">{otherDetails[stage].label}</span>
+                <small className="muted">{otherDetails[stage].hint}</small>
+                <textarea className="textarea" maxLength={1000} placeholder={otherDetails[stage].hint} value={settings[detailsKey] ?? ""} onChange={(event) => change(detailsKey, event.target.value || undefined)} />
+              </label>
+              <label className="field"><span className="label">Количество вариантов изображения</span>
                 <select className="select" value={counts[stage]} onChange={(event) => { setCounts({ ...counts, [stage]: Number(event.target.value) }); setNotice(""); }}>
                   {[1, 2, 3].map((count) => <option key={count} value={count}>{count}</option>)}
                 </select>
               </label>
+              {remainingImages !== null && <p className="muted">Доступно генераций изображений: {remainingImages}.</p>}
             </fieldset>
           </div>
           <p className="muted">Смена лица не удаляет выбранную фигуру или одежду: их можно сохранить как отдельные референсы. Если сочетание выглядит несовместимо, пересоздайте только нужный последующий этап.</p>
           {changed && <p role="status" className="muted">Изменённые параметры будут применены при следующем нажатии «Создать варианты».</p>}
           {appearance.generation_unavailable_reason && <p className="muted">{publicErrorText(appearance.generation_unavailable_reason)}</p>}
-          {appearance.generation_available && <p className="muted">Создание изображений платное; списание идёт с вашего подключённого баланса. Автоматические повторы отключены.</p>}
-          <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || needsFaceAdjustmentChoice || !appearance.generation_available} onClick={() => void generate()}>
+          {appearance.generation_available && <p className="muted">Генерации изображений расходуют лимит аккаунта. Автоматические повторы отключены.</p>}
+          <button className="button" type="button" disabled={locked || !settings.gender || !stageReady || needsFaceAdjustmentChoice || !appearance.generation_available || countExceedsAllowance} onClick={() => void generate()}>
             {running ? "Генерация выполняется…" : `Создать варианты (${counts[stage]})`}
           </button>
+          {countExceedsAllowance && <p role="status" className="form-error">Доступно изображений: {remainingImages}. Выберите меньше вариантов.</p>}
+          {error && <p role="status" className="form-error">{publicErrorText(error)}</p>}
           {pendingSubmission && <div className="stack">
             <p role="status">Проверяем, принят ли запрос. Повторная отправка использует тот же идентификатор и не создаёт дубликат задания.</p>
             <button className="secondary-button" type="button" disabled={busy} onClick={() => void generate(undefined, pendingSubmission)}>Проверить / повторить отправку</button>
@@ -320,7 +363,8 @@ export function AppearancePanel({ character, onCharacterChange }: { character: C
               {item.cost_usd !== null && <span> · ${Number(item.cost_usd).toFixed(4)}</span>}
               {item.error && <p className="muted">{publicErrorText(item.error)}</p>}
             </div>)}
-            {retryCount > 0 && !["queued", "running"].includes(latestJob.status) && <button className="secondary-button" type="button" disabled={locked || changed || !appearance.generation_available} onClick={() => void generate(latestJob)}>Повторить только неполученные ({retryCount})</button>}
+            {rejectedByModel && <p className="muted">Измените описание или выбранный референс, затем нажмите «Создать варианты».</p>}
+            {retryCount > 0 && !rejectedByModel && !["queued", "running"].includes(latestJob.status) && <button className="secondary-button" type="button" disabled={locked || changed || !appearance.generation_available || retryExceedsAllowance} onClick={() => void generate(latestJob)}>Повторить только неполученные ({retryCount})</button>}
           </div>}
           {stage !== "face" && !stageReady && <p className="muted">Для этого этапа сначала выберите {stage === "body" ? "лицо" : "лицо и фигуру"}.</p>}
           {latestCandidates.length > 0 && <section className="stack" aria-label="Последние варианты">

@@ -57,6 +57,12 @@ class OrchestratorContextTestCase(unittest.TestCase):
         Base.metadata.create_all(bind=self.engine)
         self.db = self.SessionLocal()
         self.character = self.create_character()
+        session_patch = patch("app.main.SessionLocal", self.SessionLocal)
+        auth_patch = patch("app.main.get_session_user", side_effect=lambda db, _token: db.get(User, self.character.user_id))
+        session_patch.start()
+        auth_patch.start()
+        self.addCleanup(session_patch.stop)
+        self.addCleanup(auth_patch.stop)
 
     def tearDown(self) -> None:
         self.db.close()
@@ -391,6 +397,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
 
     def test_voice_intent_recognizes_explicit_requests_and_negation(self) -> None:
         for message in (
+            "Пришли голосовое",
             "Пришли мне голосовое",
             "Пришлите мне голосовое",
             "Скажи это голосом",
@@ -609,6 +616,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "emotionality": 75,
                     "rationality": 55,
                     "voice_id": "Orus",
+                    "user_address_name": "Саша",
                 },
             )
         finally:
@@ -625,6 +633,51 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(profile.initiative, 70)
         self.assertEqual(profile.playfulness, 35)
         self.assertEqual(profile.voice_id, "Orus")
+        self.assertEqual(profile.user_address_name, "Саша")
+        self.assertEqual(response.json()["user_address_name"], "Саша")
+        state = self.db.scalar(select(CharacterState).where(CharacterState.character_id == character_id))
+        self.assertEqual((state.trust_level, state.attachment_level), (35, 25))
+
+    def test_initial_relationship_state_rises_with_closeness(self) -> None:
+        def override_get_db():
+            with self.SessionLocal() as db:
+                yield db
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            client = TestClient(app)
+            states = {}
+            for relationship_mode in ("companion", "colleague", "friend", "romantic"):
+                response = client.post("/characters", json={"name": relationship_mode, "relationship_mode": relationship_mode})
+                self.assertEqual(response.status_code, 200)
+                with self.SessionLocal() as db:
+                    state = db.scalar(select(CharacterState).where(CharacterState.character_id == response.json()["id"]))
+                    states[relationship_mode] = (state.trust_level, state.attachment_level)
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(states["companion"], (10, 5))
+        self.assertEqual(states["colleague"], (8, 4))
+        self.assertEqual(states["friend"], (35, 25))
+        self.assertEqual(states["romantic"], (55, 45))
+
+    def test_biography_variants_route_is_available_during_creation(self) -> None:
+        def override_get_db():
+            with self.SessionLocal() as db:
+                yield db
+
+        app.dependency_overrides[get_db] = override_get_db
+        try:
+            with patch(
+                "app.routers.characters.generate_biography_variants",
+                return_value={"variants": ["Один.", "Два.", "Три."]},
+            ):
+                response = TestClient(app).post("/characters/biography-variants", json={"name": "Анна"})
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["variants"]), 3)
 
     def test_character_settings_can_be_updated_for_existing_character(self) -> None:
         def override_get_db():
@@ -644,6 +697,11 @@ class OrchestratorContextTestCase(unittest.TestCase):
                     "relationship_mode": "colleague",
                     "personality_description": "Calm but curious",
                     "communication_style": "Direct and practical",
+                    "biography": "Lives in a seaside town",
+                    "boundaries": "No spoilers",
+                    "likes": "Jazz",
+                    "dislikes": "Crowds",
+                    "language": "en",
                     "warmth": 40,
                     "initiative": 80,
                     "playfulness": 20,
@@ -672,6 +730,11 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(payload["relationship_mode"], "colleague")
         self.assertEqual(payload["personality_description"], "Calm but curious")
         self.assertEqual(payload["communication_style"], "Direct and practical")
+        self.assertEqual(payload["biography"], "Lives in a seaside town")
+        self.assertEqual(payload["boundaries"], "No spoilers")
+        self.assertEqual(payload["likes"], "Jazz")
+        self.assertEqual(payload["dislikes"], "Crowds")
+        self.assertEqual(payload["language"], "en")
         self.assertEqual(payload["warmth"], 40)
         self.assertEqual(payload["initiative"], 80)
         self.assertEqual(payload["rationality"], 85)
@@ -688,6 +751,8 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertEqual(updated_character.profile.directness, 90)
         self.assertEqual(updated_character.profile.emotionality, 30)
         self.assertEqual(updated_character.profile.response_length, "detailed")
+        self.assertEqual(updated_character.profile.biography, "Lives in a seaside town")
+        self.assertEqual(updated_character.profile.background_story, "Lives in a seaside town")
 
         context = build_orchestrator_context(self.db, updated_character, "Расскажи мне историю")
         prompt = build_provider_prompt(context).system
@@ -860,7 +925,7 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("Never transfer details from the character's persona", prompt.system)
         self.assertIn("Use names sparingly", prompt.system)
         self.assertIn("back-to-back routine replies", prompt.system)
-        self.assertIn("orchestrator has already selected names", prompt.system)
+        self.assertIn("orchestrator has already selected the character-specific address name", prompt.system)
         self.assertIn("normal and preferred behavior is to reply without using the user's name", prompt.system)
         self.assertIn("a name is merely available, never required", prompt.system)
         self.assertIn("do not justify repeating it more often", prompt.system)
@@ -937,6 +1002,18 @@ class OrchestratorContextTestCase(unittest.TestCase):
         self.assertIn("user_name: the user", prompt.system)
         self.assertIn("do not invent a name for the user", prompt.system)
         self.assertIn("do not address the user by user_display_name", prompt.system)
+
+    def test_explicit_character_address_name_overrides_global_names(self) -> None:
+        self.character.profile.user_address_name = "Саша"
+        self.db.commit()
+
+        context = build_orchestrator_context(self.db, self.character, "Привет")
+        prompt = build_provider_prompt(context)
+
+        self.assertEqual(context.user_context.default_name, "Саша")
+        self.assertEqual(context.user_context.direct_address_name, "Саша")
+        self.assertEqual(context.user_context.address_policy, "chosen_for_character")
+        self.assertIn("user_name: Саша", prompt.system)
 
     def test_prompt_builder_uses_explicit_preferred_name_without_inventing_forms(self) -> None:
         self.character.profile.user_nickname = ""

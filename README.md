@@ -2,7 +2,13 @@
 
 The local development Compose file is not a public deployment configuration.
 
-An AI Companion web app with persistent characters, structured roleplay, memory, emotional state, and text and voice conversations.
+An AI Companion web app with personal accounts, persistent characters, structured roleplay, memory, emotional state, and text and voice conversations.
+
+## Accounts and beta allowances
+
+Registration at `/register` is open and requires an email address and a password of at least 10 characters. Sessions use an HttpOnly cookie and expire after 30 days. Chats, characters, memories, generated media files, and video jobs are restricted to the owning account. The account page displays lifetime beta allowances: 10 image outputs, 3 video requests, 500 text replies and 50 voice replies from characters. The counters survive deletion of characters and chats. Existing demo data remains in the database under the legacy demo user and is not exposed to newly registered accounts.
+
+Open registration allows a person to create additional accounts and receive additional allowances. Before a public launch, configure the existing global `BETA_MAX_IMAGE_OUTPUTS` and `BETA_MAX_VIDEO_REQUESTS` as a site-wide ceiling, plus an upstream Venice spending cap. This project is not deployed by this change.
 
 ## Stack
 
@@ -25,7 +31,7 @@ An AI Companion web app with persistent characters, structured roleplay, memory,
 - Store user and assistant messages in PostgreSQL
 - Load chat history in the frontend
 
-Auth, payments, realtime voice, live avatar, and LoRA are not included yet.
+Payments, realtime voice, live avatar, and LoRA are not included yet.
 
 The current character-appearance work adds a face → body → clothing wizard,
 Venice or OpenRouter image requests, saved references, and local image files. Offline tests

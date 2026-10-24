@@ -28,8 +28,9 @@ class VeniceImageTestCase(unittest.TestCase):
         self.assertEqual(image_configuration_error(self.config), "")
         self.assertEqual(model_for_stage("face", self.config), "grok-imagine-image-2-0")
         self.assertEqual(model_for_stage("body", self.config), "grok-imagine-image-2-0-edit")
-        self.assertEqual(model_for_stage("clothing", self.config), "grok-imagine-image-2-0-edit")
+        self.assertEqual(model_for_stage("clothing", self.config), "qwen-edit-uncensored")
         self.assertIn("Не настроен доступ", image_configuration_error(self.config.model_copy(update={"venice_api_key": ""})))
+        self.assertIn("модель создания одежды", image_configuration_error(self.config.model_copy(update={"venice_clothing_image_edit_model": "bad-model"})))
         self.assertEqual(image_configuration_error(self.config.model_copy(update={"image_provider": "openrouter", "image_model": "flux", "llm_api_key": "key"})), "")
 
     def test_hybrid_uses_grok_for_face_and_body_and_venice_for_clothing(self):
@@ -39,7 +40,7 @@ class VeniceImageTestCase(unittest.TestCase):
         self.assertEqual([provider_for_stage(stage, config) for stage in ("face", "body", "clothing")],
                          ["openrouter", "openrouter", "venice"])
         self.assertEqual([model_for_stage(stage, config) for stage in ("face", "body", "clothing")],
-                         ["x-ai/grok-imagine-image-2.0", "x-ai/grok-imagine-image-2.0", "grok-imagine-image-2-0-edit"])
+                         ["x-ai/grok-imagine-image-2.0", "x-ai/grok-imagine-image-2.0", "qwen-edit-uncensored"])
         self.assertIn("Не настроен доступ", image_configuration_error(config.model_copy(update={"venice_api_key": ""})))
         self.assertIn("Не настроен доступ", image_configuration_error(config.model_copy(update={"llm_api_key": ""})))
 
@@ -104,6 +105,18 @@ class VeniceImageTestCase(unittest.TestCase):
                 self.assertEqual(caught.exception.unknown_outcome, status == 500)
                 self.assertNotIn("private-test-key", str(caught.exception))
                 self.assertNotIn("private-test-key", json.dumps(caught.exception.diagnostic))
+
+    def test_validation_rejection_explains_that_prompt_must_change(self):
+        def handler(_request):
+            return httpx.Response(422, json={"code": "CONTENT_POLICY_VIOLATION", "error": "Prompt rejected"})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(ImageProviderError) as caught:
+                VeniceImageProvider(self.config, client).generate(
+                    model="grok-imagine-image-2-0-edit", prompt="clothing", references=[self.png])
+        self.assertFalse(caught.exception.unknown_outcome)
+        self.assertEqual(caught.exception.diagnostic["code"], "CONTENT_POLICY_VIOLATION")
+        self.assertIn("Измените описание или референс", str(caught.exception))
 
     def test_clothing_prompt_matches_single_reference(self):
         prompt = build_appearance_prompt("clothing", {"gender": "female", "clothing": "red dress"}, "venice")

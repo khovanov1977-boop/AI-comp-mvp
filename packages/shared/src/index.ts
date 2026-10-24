@@ -70,6 +70,7 @@ export type Character = {
   dislikes: string;
   language: string;
   user_nickname: string;
+  user_address_name: string;
   voice_id: string;
   response_length: "brief" | "balanced" | "detailed";
   user_city: string;
@@ -87,6 +88,7 @@ export type Character = {
 
 export type VoiceOption = {
   id: string;
+  display_name: string;
   gender: "female" | "male";
   age_group: string;
   description: string;

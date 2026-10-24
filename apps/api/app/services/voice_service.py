@@ -1,4 +1,9 @@
 import re
+from hashlib import sha256
+from os import replace
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import Lock
 
 from app.models.character import Character
 from app.models.message import Message
@@ -9,13 +14,17 @@ from app.providers.tts_openrouter import TTSConfigurationError, TTSProviderError
 from app.schemas.llm import CharacterReply, CharacterReplyDelivery, plain_character_reply
 from app.services.reply_renderer import build_spoken_transcript
 from app.services.voice_catalog import is_supported_voice
-from app.services.voice_storage import save_voice_file
+from app.services.voice_storage import VOICE_STORAGE_ROOT, save_voice_file
 
 
 PREVIEW_TEXT = (
     "Привет. День был непростой, но всё закончилось хорошо. "
     "Расскажи, как прошёл твой вечер?"
 )
+PREVIEW_CACHE_ROOT = VOICE_STORAGE_ROOT.parent / "voice-previews"
+PREVIEW_BUNDLED_ROOT = Path(__file__).resolve().parents[1] / "assets" / "voice-previews"
+PREVIEW_CACHE_LOCK = Lock()
+PREVIEW_FORMATS = {"audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/x-wav": ".wav"}
 
 KNOWN_RUSSIAN_NAME_PRONUNCIATIONS = {
     "леша": "лёша",
@@ -86,6 +95,7 @@ def normalize_russian_pronunciation(character: Character, text: str) -> str:
                 user.preferred_name,
                 user.casual_name,
                 user.vocative_name,
+                character.profile.user_address_name if character.profile else "",
             ]
         )
     for name in known_names:
@@ -198,7 +208,32 @@ def synthesize_voice_preview(voice_id: str) -> SynthesizedSpeech:
         "# TRANSCRIPT\n"
         f"{build_spoken_transcript(preview_reply)}"
     )
-    return get_tts_provider().synthesize(provider_input, voice_id)
+    provider = get_tts_provider()
+    cache_key = sha256(
+        f"v1|{provider.name}|{provider.model}|{voice_id}|{provider_input}".encode("utf-8")
+    ).hexdigest()
+    with PREVIEW_CACHE_LOCK:
+        for directory in (PREVIEW_BUNDLED_ROOT, PREVIEW_CACHE_ROOT):
+            for extension, mime_type in ((".mp3", "audio/mpeg"), (".wav", "audio/wav")):
+                cache_file = directory / f"{cache_key}{extension}"
+                if cache_file.is_file() and cache_file.stat().st_size:
+                    return SynthesizedSpeech(cache_file.read_bytes(), mime_type)
+
+        PREVIEW_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+        speech = provider.synthesize(provider_input, voice_id)
+        mime_type = speech.mime_type.partition(";")[0].strip().lower()
+        extension = PREVIEW_FORMATS.get(mime_type)
+        if not extension or not speech.audio_bytes:
+            raise TTSProviderError("Voice preview has an unsupported audio format")
+        cache_file = PREVIEW_CACHE_ROOT / f"{cache_key}{extension}"
+        with NamedTemporaryFile(dir=PREVIEW_CACHE_ROOT, prefix="preview-", suffix=".tmp", delete=False) as temporary:
+            temporary.write(speech.audio_bytes)
+            temporary_path = Path(temporary.name)
+        try:
+            replace(temporary_path, cache_file)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        return speech
 
 
 def speech_to_text(audio_bytes: bytes, mime_type: str) -> str:

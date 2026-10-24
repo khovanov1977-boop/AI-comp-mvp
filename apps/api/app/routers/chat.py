@@ -255,6 +255,9 @@ def post_chat(payload: ChatRequest, background_tasks: BackgroundTasks, db: Sessi
 
     try:
         reply, assistant_message, reply_plan = handle_chat_message(db, character, payload.message)
+    except HTTPException:
+        db.rollback()
+        raise
     except LLMConfigurationError as exc:
         db.rollback()
         raise HTTPException(
@@ -318,6 +321,9 @@ def retry_chat(payload: ChatRetryRequest, db: Session = Depends(get_db)) -> Chat
 
     try:
         reply, assistant_message, reply_plan = retry_last_user_message(db, character)
+    except HTTPException:
+        db.rollback()
+        raise
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc

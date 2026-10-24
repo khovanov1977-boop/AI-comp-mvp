@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import settings
 from app.models.appearance import AppearanceCandidate, CharacterAppearance, ImageGenerationJob
@@ -24,7 +25,6 @@ from app.services.appearance_prompt import build_appearance_negative_prompt
 from app.services.appearance_service import (
     STAGES,
     candidate_asset,
-    commit_appearance,
     require_character,
     require_revision,
     stage_context,
@@ -33,6 +33,7 @@ from app.services.appearance_service import (
 from app.services.image_prompt_compiler import ImagePromptCompilerError, get_image_prompt_compiler
 from app.services.image_storage import ImageStorageError, delete_image, read_image, save_image
 from app.services.beta_limits import paid_limit_reason, reserve_paid_units
+from app.services.account_limits import release_image_units, reserve_account_units
 
 # Protect final file/DB writes against same-process character deletion. Never hold
 # this lock over a network request. The DB row lock covers PostgreSQL processes.
@@ -48,7 +49,7 @@ def job_read(job: ImageGenerationJob) -> dict:
 
 
 def submit_generation(db: Session, character_id: str, stage: str, payload: AppearanceGenerate) -> tuple[ImageGenerationJob, bool]:
-    require_character(db, character_id)
+    character = require_character(db, character_id)
     job_id = str(payload.request_id)
     existing = db.get(ImageGenerationJob, job_id)
     if existing:
@@ -121,8 +122,8 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         counts = dict(appearance.counts or dict.fromkeys(STAGES, 1))
         counts[stage] = payload.count
         appearance.counts = counts
-        commit_appearance(db)
-        appearance = db.get(CharacterAppearance, character_id)
+        # Keep the appearance edit in the same transaction as quota reservation
+        # and job creation. A rejected request must not advance the revision.
         context = stage_context(appearance, stage)
         context["compiled_settings"] = compiled.settings
         context["prompt_compiler_version"] = compiled.version
@@ -151,6 +152,8 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         failed = [item for item in parent.outputs if item["status"] != "completed"]
         if not failed:
             raise HTTPException(409, "Все варианты уже получены.")
+        if any("HTTP 422" in item.get("error", "") for item in failed):
+            raise HTTPException(409, "Модель отклонила прежний запрос. Измените описание или референс и создайте новые варианты.")
         if any(item["status"] == "unknown" for item in failed) and not payload.confirm_unknown_retry:
             raise HTTPException(409, "Результат предыдущего запроса неизвестен. Подтвердите возможное повторное списание.")
         count = len(failed)
@@ -167,7 +170,15 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
         context["negative_prompt"] = negative_prompt
     if not 1 <= count <= 3:
         raise HTTPException(422, "Количество вариантов должно быть от 1 до 3.")
-    reserve_paid_units(db, "image", count)
+    try:
+        reserve_account_units(db, character.user_id, "images_count", count)
+        reserve_paid_units(db, "image", count)
+    except HTTPException:
+        db.rollback()
+        raise
+    except (IntegrityError, StaleDataError):
+        db.rollback()
+        raise HTTPException(409, "Образ изменён одновременно с этим запросом. Обновите страницу.") from None
     job = ImageGenerationJob(
         id=job_id, character_id=character_id, active_key=character_id, retry_of=retry_of,
         stage=stage, model=model, input_context=context,
@@ -177,7 +188,7 @@ def submit_generation(db: Session, character_id: str, stage: str, payload: Appea
     db.add(job)
     try:
         db.commit()
-    except IntegrityError:
+    except (IntegrityError, StaleDataError):
         db.rollback()
         existing = db.get(ImageGenerationJob, job_id)
         if existing and existing.character_id == character_id and existing.stage == stage and existing.retry_of == retry_of:
@@ -195,6 +206,7 @@ def _update_output(db: Session, job: ImageGenerationJob, index: int, **changes) 
 def recover_interrupted_jobs(db: Session) -> None:
     for job in db.scalars(select(ImageGenerationJob).where(ImageGenerationJob.status.in_(["queued", "running"]))):
         outputs = deepcopy(job.outputs)
+        unsubmitted = sum(item["status"] == "queued" for item in outputs)
         for item in outputs:
             if item["status"] == "running":
                 item.update(status="unknown", error="Сервер был остановлен во время запроса. Результат неизвестен; автоповтор отключён.")
@@ -203,6 +215,8 @@ def recover_interrupted_jobs(db: Session) -> None:
         job.outputs = outputs
         job.status = "interrupted"
         job.active_key = None
+        if unsubmitted and (character := db.get(Character, job.character_id)):
+            release_image_units(db, character.user_id, unsubmitted)
     db.commit()
 
 
@@ -220,7 +234,7 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
         if claimed.rowcount != 1:
             return
         job = db.get(ImageGenerationJob, job_id)
-        character_id, model, prompt, context = job.character_id, job.model, job.prompt, deepcopy(job.input_context)
+        character_id, stage, model, prompt, context = job.character_id, job.stage, job.model, job.prompt, deepcopy(job.input_context)
         provider_name = context.get("image_provider", "openrouter")
         count = len(job.outputs)
     for index in range(count):
@@ -280,6 +294,9 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
             # Never expose provider responses, prompts, API keys or exception reprs.
             if isinstance(exc, ImageProviderError):
                 message, state = str(exc), "unknown" if exc.unknown_outcome else "failed"
+                if exc.diagnostic:
+                    logger.warning("image_generation_provider_error stage=%s model=%s diagnostic=%s",
+                                   stage, model, exc.diagnostic)
             elif isinstance(exc, (ImageStorageError, OSError)):
                 message, state = "Не удалось прочитать или сохранить изображение. Проверьте файлы и свободное место.", "failed"
             else:
@@ -293,6 +310,9 @@ def _run_generation(job_id: str, session_factory, provider=None) -> None:
                 # submits only failed/unknown/not-started slots, never successful ones.
                 for remaining in range(index + 1, count):
                     _update_output(db, job, remaining, status="not_started", error="Не отправлен после ошибки предыдущего варианта.")
+                refundable = count - index if state == "failed" else count - index - 1
+                if refundable and (character := db.get(Character, character_id)):
+                    release_image_units(db, character.user_id, refundable)
                 db.commit()
             break
     with session_factory() as db:

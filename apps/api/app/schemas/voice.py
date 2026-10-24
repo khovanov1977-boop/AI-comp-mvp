@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class VoiceOptionRead(BaseModel):
     id: str
+    display_name: str
     gender: str
     age_group: str
     description: str

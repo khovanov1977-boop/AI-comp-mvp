@@ -1,8 +1,9 @@
 # Character image generation: local setup and verification
 
-Updated: 2026-10-07. The appearance wizard uses the Grok Imagine 2.0
-generation/edit pair through Venice. New in-chat context photos use
-`qwen-edit-uncensored` with one published appearance reference. Existing jobs
+Updated: 2026-10-24. The appearance wizard uses Grok Imagine 2.0 generation
+for faces and its edit model for figures, preserving the chosen face reference.
+Clothing and new in-chat context photos use `qwen-edit-uncensored` with one
+reference image. Existing jobs
 keep their recorded model. Historical live-test results below describe previous
 configurations, not necessarily the current route.
 
@@ -78,6 +79,7 @@ IMAGE_PROVIDER=venice
 VENICE_API_KEY=your_existing_venice_key
 VENICE_IMAGE_MODEL=grok-imagine-image-2-0
 VENICE_IMAGE_EDIT_MODEL=grok-imagine-image-2-0-edit
+VENICE_CLOTHING_IMAGE_EDIT_MODEL=qwen-edit-uncensored
 VENICE_SCENE_IMAGE_EDIT_MODEL=qwen-edit-uncensored
 IMAGE_TIMEOUT_SECONDS=180
 ```
@@ -86,7 +88,7 @@ The face is generated without a reference. Body uses the selected face image;
 clothing uses the selected body image, already derived from that face. The
 in-chat «Фото» action edits the published full-look image with its separate
 scene-image model. New jobs request 2:3 PNG with prompt enhancement disabled
-and `safe_mode=false`. Grok wizard jobs request 1K; the Qwen edit route does not
+and `safe_mode=false`. Grok face and figure jobs request 1K; the Qwen edit route does not
 send a resolution parameter. Venice may return JPEG, which the adapter converts
 to PNG for storage. Generation requests medium quality; the edit endpoint does
 not accept an explicit quality parameter. Each job stores its provider and model

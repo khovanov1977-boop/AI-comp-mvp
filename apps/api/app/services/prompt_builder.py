@@ -207,7 +207,7 @@ def build_provider_prompt(context: OrchestratorContext) -> ProviderPrompt:
         "- The normal and preferred behavior is to reply without using the user's name. People do not address each other by name in every conversational turn.",
         "- If user_name_usage_allowed_this_turn is False, do not use any user name or name variant anywhere in the reply, even if one appears in recent messages.",
         "- If user_name_usage_allowed_this_turn is True, a name is merely available, never required. Most replies should still omit it.",
-        "- The orchestrator has already selected names from the relationship role. Do not override user_address_policy or choose another stored name form.",
+        "- The orchestrator has already selected the character-specific address name or a name based on the relationship role. Do not override user_address_policy or choose another stored name form.",
         "- Only when a rare name use is natural, use user_default_name outside direct address or user_direct_address_name in direct address. Never derive or decline either form yourself.",
         "- Do not start a reply with the user's name by default. Relationship closeness, romance, excitement, or roleplay intensity do not justify repeating it more often.",
         "- If the selected name is suppressed or not specified, do not recover it from user_display_name, profile, memory, or recent messages.",

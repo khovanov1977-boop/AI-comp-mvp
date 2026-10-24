@@ -4,12 +4,12 @@ import { getApiAssetUrl, publicErrorText } from "../lib/api";
 
 function formatDuration(durationMs: number | null) {
   if (!durationMs) {
-    return "Voice message";
+    return "Голосовое сообщение";
   }
   const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `Voice message · ${minutes}:${seconds}`;
+  return `Голосовое сообщение · ${minutes}:${seconds}`;
 }
 
 export function VoiceMessagePlayer({
@@ -34,21 +34,21 @@ export function VoiceMessagePlayer({
       <span>{formatDuration(durationMs)}</span>
       {audioUrl ? (
         <audio controls preload="metadata" src={getApiAssetUrl(audioUrl)}>
-          Your browser does not support audio playback.
+          Ваш браузер не поддерживает воспроизведение аудио.
         </audio>
       ) : (
-        <small>Audio file is unavailable.</small>
+        <small>Аудиофайл недоступен.</small>
       )}
       {transcript ? <p className="voice-transcript">{transcript}</p> : null}
-      {transcriptionStatus === "pending" ? <small>Transcription was interrupted.</small> : null}
+      {transcriptionStatus === "pending" ? <small>Расшифровка была прервана.</small> : null}
       {transcriptionStatus === "failed" ? (
         <div className="voice-transcription-error">
-          <small>{transcriptionError ? publicErrorText(transcriptionError) : "Could not transcribe this recording."}</small>
+          <small>{transcriptionError ? publicErrorText(transcriptionError) : "Не удалось расшифровать запись."}</small>
         </div>
       ) : null}
       {onRetry && (transcriptionStatus === "pending" || transcriptionStatus === "failed") ? (
         <button className="text-button" type="button" disabled={isRetrying} onClick={onRetry}>
-          {isRetrying ? "Transcribing..." : "Retry transcription"}
+          {isRetrying ? "Расшифровываем…" : "Повторить расшифровку"}
         </button>
       ) : null}
     </div>

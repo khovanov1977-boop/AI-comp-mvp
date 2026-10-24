@@ -13,6 +13,27 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export type AccountUser = { id: string; email: string; display_name: string; created_at?: string };
+export type AccountLimits = Record<"images_count" | "videos_count" | "text_messages_count" | "voice_messages_count", { used: number; limit: number }>;
+export type MediaAsset = { id: string; character_id: string; media_type: string; url: string; prompt: string; created_at: string };
+export type ExampleCharacter = {
+  slug: string;
+  name: string;
+  age: number;
+  gender: string;
+  relationship_mode: string;
+  visual_label: string;
+  appearance_summary: string;
+  personality_description: string;
+  communication_style: string;
+  biography: string;
+  boundaries: string;
+  likes: string;
+  dislikes: string;
+  appearance: AppearanceSettings;
+  images: Record<"face" | "body" | "clothing", string>;
+};
+
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly code = "") {
     super(message);
@@ -29,6 +50,7 @@ export function getApiAssetUrl(path: string) {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,
@@ -37,6 +59,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ai-comp:unauthorized"));
+    }
     let message = `API request failed: ${response.status}`;
     let code = "";
     try {
@@ -62,6 +87,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export function getMe() { return request<AccountUser>("/auth/me"); }
+export function registerAccount(email: string, password: string, display_name: string) {
+  return request<AccountUser>("/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name }) });
+}
+export function loginAccount(email: string, password: string) {
+  return request<AccountUser>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+}
+export function logoutAccount() { return request<{ status: string }>("/auth/logout", { method: "POST" }); }
+export function getAccountLimits() { return request<AccountLimits>("/limits"); }
+export function listMedia(characterId: string) { return request<MediaAsset[]>(`/media/${characterId}`); }
+
 export type CharacterCreateInput = {
   name: string;
   gender: string;
@@ -78,6 +114,7 @@ export type CharacterCreateInput = {
   user_country: string;
   user_timezone: string;
   user_language: string;
+  user_address_name: string;
   voice_id: string;
   response_length: Character["response_length"];
   warmth: number;
@@ -94,6 +131,12 @@ export type CharacterUpdateInput = Pick<
   | "relationship_mode"
   | "personality_description"
   | "communication_style"
+  | "biography"
+  | "boundaries"
+  | "likes"
+  | "dislikes"
+  | "language"
+  | "user_address_name"
   | "voice_id"
   | "response_length"
   | "warmth"
@@ -115,6 +158,7 @@ export function getVoiceUploadConstraints() {
 export async function previewVoice(voiceId: string) {
   const response = await fetch(`${API_URL}/voice/preview`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ voice_id: voiceId }),
   });
@@ -135,8 +179,23 @@ export function listCharacters() {
   return request<Character[]>("/characters");
 }
 
+export function listExamples() {
+  return request<ExampleCharacter[]>("/examples");
+}
+
+export function copyExample(slug: string) {
+  return request<Character>(`/examples/${encodeURIComponent(slug)}/copy`, { method: "POST" });
+}
+
 export function createCharacter(input: CharacterCreateInput) {
   return request<Character>("/characters", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function generateBiographyVariants(input: Pick<CharacterCreateInput, "name" | "gender" | "personality_description" | "communication_style" | "biography" | "likes" | "dislikes">) {
+  return request<{ variants: string[] }>("/characters/biography-variants", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -277,6 +336,7 @@ export async function uploadVoiceFile(
 ) {
   const response = await fetch(`${API_URL}/voice/messages/${characterId}/upload`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": audio.type || "audio/webm",
       "X-Audio-Duration-Ms": String(Math.max(1, Math.round(durationMs))),

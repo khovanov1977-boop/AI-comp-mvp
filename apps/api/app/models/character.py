@@ -38,6 +38,7 @@ class CharacterProfile(Base):
     dislikes: Mapped[str] = mapped_column(Text, default="")
     language: Mapped[str] = mapped_column(String, default="ru")
     user_nickname: Mapped[str] = mapped_column(String, default="")
+    user_address_name: Mapped[str] = mapped_column(String, default="")
     voice_id: Mapped[str] = mapped_column(String, default="")
     response_length: Mapped[str] = mapped_column(String, default="balanced")
     warmth: Mapped[int] = mapped_column(Integer, default=50)

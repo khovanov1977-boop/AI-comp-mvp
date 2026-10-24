@@ -1,0 +1,20 @@
+{
+  "face": {
+    "status": "accepted",
+    "model": "grok-imagine-image-2-0",
+    "generated_at": "2026-10-18T11:32:05.662051+00:00",
+    "sha256": "3f752d3e3a188b268b083792b202431080f6383fb83d2fc06c4d18907f4918f3"
+  },
+  "body": {
+    "status": "accepted",
+    "model": "grok-imagine-image-2-0-edit",
+    "generated_at": "2026-10-18T11:32:25.557835+00:00",
+    "sha256": "69b3c2c776a88bcf90f8f14ef16fb2d54da863030517ea03a0e140558f1f4074"
+  },
+  "clothing": {
+    "status": "accepted",
+    "model": "grok-imagine-image-2-0-edit",
+    "generated_at": "2026-10-18T11:32:41.349739+00:00",
+    "sha256": "afb9e5be18ecec425e3f897d78b2a1d46b922c2a8bde7b549cc646d51a8e84f5"
+  }
+}

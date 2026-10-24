@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     venice_tts_model: str = "tts-gemini-3-1-flash"
     venice_image_model: str = "grok-imagine-image-2-0"
     venice_image_edit_model: str = "grok-imagine-image-2-0-edit"
+    venice_clothing_image_edit_model: str = "qwen-edit-uncensored"
     venice_scene_image_edit_model: str = "qwen-edit-uncensored"
     venice_video_i2v_model: str = "wan-3-0-reference-to-video"
     venice_video_r2v_model: str = "wan-3-0-reference-to-video"

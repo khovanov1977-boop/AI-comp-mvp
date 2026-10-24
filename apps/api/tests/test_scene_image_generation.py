@@ -22,6 +22,7 @@ from app.models.message import Message
 from app.models.scene_image import SceneImageJob
 from app.models.user import User
 from app.providers.image_openrouter import GeneratedImage, ImageProviderError
+from app.services.account_limits import usage_snapshot
 from app.services.image_storage import save_image
 from app.services.scene_image_generation import (
     is_photo_request, recover_interrupted_scene_images, run_scene_image, submit_scene_image,
@@ -134,6 +135,7 @@ class SceneImageJobTest(unittest.TestCase):
             db.add(character)
             db.commit()
             self.character_id = character.id
+            self.user_id = user.id
             reference_url = save_image(character.id, self.png)
             db.add(CharacterAppearance(character_id=character.id, settings={}, selections={},
                                        published={"references": {"body": {"url": reference_url}}}))
@@ -190,6 +192,18 @@ class SceneImageJobTest(unittest.TestCase):
         provider.generate.assert_called_once()
         with self.sessions() as db:
             self.assertEqual(db.get(SceneImageJob, str(request_id)).status, "unknown")
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 1)
+
+    def test_rejected_photo_returns_image_allowance(self):
+        request_id = uuid4()
+        with self.sessions() as db:
+            submit_scene_image(db, db.get(Character, self.character_id), "Пришли фото", request_id, self.compiler())
+        provider = Mock()
+        provider.generate.side_effect = ImageProviderError("HTTP 422")
+        run_scene_image(str(request_id), self.sessions, provider)
+        with self.sessions() as db:
+            self.assertEqual(db.get(SceneImageJob, str(request_id)).status, "failed")
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 0)
 
     def test_restart_marks_queued_without_sending(self):
         request_id = uuid4()
@@ -197,6 +211,7 @@ class SceneImageJobTest(unittest.TestCase):
             submit_scene_image(db, db.get(Character, self.character_id), "Пришли фото", request_id, self.compiler())
             recover_interrupted_scene_images(db)
             self.assertEqual(db.get(SceneImageJob, str(request_id)).status, "not_started")
+            self.assertEqual(usage_snapshot(db, self.user_id)["images_count"]["used"], 0)
         provider = Mock()
         run_scene_image(str(request_id), self.sessions, provider)
         provider.generate.assert_not_called()

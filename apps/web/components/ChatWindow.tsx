@@ -48,10 +48,10 @@ function getFriendlyErrorMessage(message: string) {
     return "Провайдеры разговорных моделей временно ограничили частоту запросов. Сообщение сохранено; попробуйте повторить ответ позже.";
   }
   if (message.toLowerCase().includes("timed out")) {
-    return "The model took too long to answer. Your message was saved; try again.";
+    return "Ответ модели занял слишком много времени. Сообщение сохранено; попробуйте ещё раз.";
   }
   if (message.toLowerCase().includes("failed")) {
-    return "The model connection failed. Your message was saved; try again.";
+    return "Не удалось связаться с моделью. Сообщение сохранено; попробуйте ещё раз.";
   }
   return message;
 }
@@ -123,7 +123,8 @@ export function ChatWindow({
   const [scenarioIdeas, setScenarioIdeas] = useState<ScenarioIdea[]>([]);
   const [ideasSource, setIdeasSource] = useState<"model" | "local">("model");
   const [loadingIdeas, setLoadingIdeas] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const chatWindowRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
@@ -138,13 +139,14 @@ export function ChatWindow({
   }
 
   useEffect(() => {
+    stickToBottomRef.current = true;
     setError("");
     setCanRetry(false);
     setPendingPhotoRequest(null);
     setScenarioIdeas([]);
     setIdeasSource("model");
     setOpenedMedia(null);
-    loadHistory().catch(() => setError("Could not load chat history."));
+    loadHistory().catch(() => setError("Не удалось загрузить историю чата."));
     getVoiceUploadConstraints().then(setVoiceConstraints).catch(() => undefined);
   }, [characterId, historyRevision]);
 
@@ -175,16 +177,29 @@ export function ChatWindow({
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const chatWindow = chatWindowRef.current;
+    if (chatWindow && stickToBottomRef.current) chatWindow.scrollTop = chatWindow.scrollHeight;
   }, [messages, isSending, voicePhase]);
+
+  const mediaItems = messages.flatMap<ChatMedia>((message) => {
+    if (message.message_type === "image" && message.image_url) return [{ id: message.id, kind: "image", url: message.image_url }];
+    if (message.message_type === "video" && message.video_url) return [{ id: message.id, kind: "video", url: message.video_url }];
+    return [];
+  });
+
+  function handleChatScroll() {
+    const chatWindow = chatWindowRef.current;
+    if (!chatWindow) return;
+    stickToBottomRef.current = chatWindow.scrollHeight - chatWindow.scrollTop - chatWindow.clientHeight < 72;
+  }
 
   const isProcessingVoice = voicePhase !== "idle" && voicePhase !== "requesting_microphone";
   const voicePhaseLabel = {
     idle: "",
-    requesting_microphone: "Requesting microphone access...",
-    uploading: "Uploading voice message...",
-    transcribing: "Transcribing voice message...",
-    generating: "Generating character reply and voice...",
+    requesting_microphone: "Запрашиваем доступ к микрофону…",
+    uploading: "Загружаем голосовое сообщение…",
+    transcribing: "Расшифровываем голосовое сообщение…",
+    generating: "Готовим ответ и голос персонажа…",
   }[voicePhase];
 
   async function finishSuccessfulReply(reply: string) {
@@ -196,7 +211,7 @@ export function ChatWindow({
 
   async function handleSendFailure(caughtError: unknown) {
     await loadHistory().catch(() => undefined);
-    const message = caughtError instanceof Error ? caughtError.message : "Could not send message.";
+    const message = caughtError instanceof Error ? caughtError.message : "Не удалось отправить сообщение.";
     setError(getFriendlyErrorMessage(message));
     setCanRetry(true);
   }
@@ -209,6 +224,7 @@ export function ChatWindow({
     }
 
     setDraft("");
+    stickToBottomRef.current = true;
     setIsSending(true);
     setError("");
     setCanRetry(false);
@@ -320,18 +336,18 @@ export function ChatWindow({
       type: recorder.mimeType || chunks[0]?.type || "audio/webm",
     });
     if (audio.size === 0) {
-      setError("The microphone did not produce an audio recording.");
+      setError("Микрофон не записал звук.");
       return;
     }
     if (audio.size > voiceConstraints.max_file_size_bytes) {
       setError(
-        `This recording is larger than ${formatFileSize(voiceConstraints.max_file_size_bytes)}. ` +
-          "Record a shorter voice message.",
+        `Запись превышает ${formatFileSize(voiceConstraints.max_file_size_bytes)}. ` +
+          "Запишите более короткое сообщение.",
       );
       return;
     }
     if (!voiceConstraints.accepted_mime_types.map(normalizeMimeType).includes(normalizeMimeType(audio.type))) {
-      setError("This browser produced an audio format that the server cannot process.");
+      setError("Браузер записал звук в неподдерживаемом формате.");
       return;
     }
     setVoiceUploadFailed(false);
@@ -347,14 +363,14 @@ export function ChatWindow({
     setRetryVoiceReplyMessageId(null);
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("Voice recording is not supported in this browser.");
+      setError("Этот браузер не поддерживает запись голоса.");
       return;
     }
 
     try {
       const mimeType = getSupportedAudioMimeType(voiceConstraints.accepted_mime_types);
       if (!mimeType) {
-        setError("This browser cannot record a supported audio format.");
+        setError("Этот браузер не может записать звук в нужном формате.");
         return;
       }
       setVoicePhase("requesting_microphone");
@@ -376,7 +392,7 @@ export function ChatWindow({
       };
       recorder.onerror = () => {
         cancelRecordingRef.current = true;
-        setError("The microphone recording failed.");
+        setError("Не удалось записать звук с микрофона.");
         if (recorder.state !== "inactive") {
           recorder.stop();
         } else {
@@ -402,8 +418,8 @@ export function ChatWindow({
       const isPermissionError = caughtError instanceof DOMException && caughtError.name === "NotAllowedError";
       setError(
         isPermissionError
-          ? "Microphone access was denied. Allow microphone access in the browser and try again."
-          : "Could not start microphone recording.",
+          ? "Доступ к микрофону отклонён. Разрешите его в браузере и попробуйте снова."
+          : "Не удалось начать запись с микрофона.",
       );
     }
   }
@@ -473,16 +489,16 @@ export function ChatWindow({
         }
       }
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Could not send voice message.";
+      const message = caughtError instanceof Error ? caughtError.message : "Не удалось отправить голосовое сообщение.";
       await loadHistory().catch(() => undefined);
       if (activePhase === "uploading") {
         setVoiceUploadFailed(true);
-        setError(`${message} The recording is still available; retry when ready.`);
+        setError(`${message} Запись сохранена на этой странице; попробуйте ещё раз.`);
       } else if (activePhase === "transcribing") {
-        setError(`${message} Retry transcription from the saved voice message.`);
+        setError(`${message} Повторите расшифровку сохранённого сообщения.`);
       } else {
         setRetryVoiceReplyMessageId(uploadedMessageId || null);
-        setError(`${message} The recording and transcript were saved; retry the reply.`);
+        setError(`${message} Запись и расшифровка сохранены; повторите ответ.`);
       }
     } finally {
       setVoicePhase("idle");
@@ -511,7 +527,7 @@ export function ChatWindow({
     try {
       await finishVoiceReply(messageId);
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Could not retry the reply.";
+      const message = caughtError instanceof Error ? caughtError.message : "Не удалось повторить ответ.";
       setError(message);
       setRetryVoiceReplyMessageId(messageId);
       await loadHistory().catch(() => undefined);
@@ -537,7 +553,7 @@ export function ChatWindow({
       }
       await finishVoiceReply(messageId);
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Could not retry transcription.";
+      const message = caughtError instanceof Error ? caughtError.message : "Не удалось повторить расшифровку.";
       setError(message);
       await loadHistory().catch(() => undefined);
     } finally {
@@ -558,7 +574,7 @@ export function ChatWindow({
       await loadHistory();
       onAfterSend?.();
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Could not retry voice generation.";
+      const message = caughtError instanceof Error ? caughtError.message : "Не удалось повторить создание голоса.";
       setError(message);
       await loadHistory().catch(() => undefined);
     } finally {
@@ -624,7 +640,7 @@ export function ChatWindow({
 
   return (
     <section>
-      <div className="chat-window">
+      <div className="chat-window" ref={chatWindowRef} onScroll={handleChatScroll}>
         {messages.length === 0 ? <p className="muted">Пока нет сообщений. Можно начать самому или выбрать идею для разговора ниже.</p> : null}
         {messages.map((message) => (
           <MessageBubble
@@ -647,13 +663,12 @@ export function ChatWindow({
             onOpenMedia={setOpenedMedia}
           />
         ))}
-        {isSending ? <div className="typing-indicator">Typing...</div> : null}
+        {isSending ? <div className="typing-indicator">Персонаж печатает…</div> : null}
         {voicePhaseLabel ? (
           <div className="typing-indicator voice-processing-indicator" role="status" aria-live="polite">
             {voicePhaseLabel}
           </div>
         ) : null}
-        <div ref={bottomRef} />
       </div>
       <div className="chat-video-toolbar">
         <button className="secondary-button" type="button" onClick={() => void requestIdeas()} disabled={loadingIdeas}>
@@ -677,8 +692,10 @@ export function ChatWindow({
       <details className="chat-guide">
         <summary>Краткий гид по чату</summary>
         <p>Пишите персонажу обычным текстом или отправляйте голосовое сообщение. В настройках персонажа можно выбрать голос и длину его ответов; в панели сцены — место и формат общения.</p>
-        <p>«Идеи для общения» обращаются к языковой модели и предложат темы, но ничего не отправят за вас. Если модель недоступна, покажем готовые варианты. «Фото по контексту» создаст платное фото по текущей сцене и беседе. Фото можно открыть крупно или оживить кнопкой прямо на нём; отдельное видео создаётся по референсам лица и фигуры. Перед платной генерацией видео показывается цена.</p>
-        <p>Действия и описание сцены в ответах выделяются курсивом. Нажмите на фото или «Открыть видео крупно», чтобы смотреть медиа вне рамки чата.</p>
+        <p>Чтобы получить голосовой ответ, попросите об этом прямо: «Пришли голосовое», «Ответь голосовым сообщением» или «Скажи вслух, как прошёл твой день». Обычный текстовый вопрос даст текстовый ответ.</p>
+        <p>Для фото напишите, например, «Скинь фото», «Пришли фото себя сейчас» или «Покажи фото себя в этой сцене». Запрос фото расходует лимит изображений; перед отправкой подсказка появится под полем сообщения.</p>
+        <p>«Идеи для общения» предложат темы, но ничего не отправят за вас. «Фото по контексту» создаст фото по текущей сцене и беседе и уменьшит доступный лимит. Фото можно открыть крупно или оживить кнопкой прямо на нём; отдельное видео создаётся по референсам лица и фигуры.</p>
+        <p>Действия и описание сцены в ответах выделяются курсивом. Нажмите на фото или «Открыть видео крупно», чтобы смотреть медиа вне рамки чата и листать его стрелками.</p>
       </details>
       {error ? (
         <div className="chat-error">
@@ -694,11 +711,11 @@ export function ChatWindow({
               onClick={() => retryVoiceReply(retryVoiceReplyMessageId)}
               disabled={isProcessingVoice}
             >
-              Retry reply
+              Повторить ответ
             </button>
           ) : canRetry ? (
             <button className="text-button" type="button" onClick={retryLastMessage} disabled={isSending}>
-              Retry
+              Повторить
             </button>
           ) : null}
         </div>
@@ -706,21 +723,21 @@ export function ChatWindow({
       {isRecording ? (
         <div className="voice-recorder" role="status" aria-live="polite">
           <span className="recording-dot" aria-hidden="true" />
-          <strong>Recording {formatRecordingTime(recordingSeconds)}</strong>
+          <strong>Запись {formatRecordingTime(recordingSeconds)}</strong>
           <button className="secondary-button" type="button" onClick={cancelVoiceRecording}>
-            Cancel
+            Отмена
           </button>
           <button className="button" type="button" onClick={stopVoiceRecording}>
-            Stop
+            Остановить
           </button>
         </div>
       ) : pendingVoice ? (
         <div className="voice-recorder" role="status" aria-live="polite">
           <strong>
-            Voice message ready · {formatRecordingTime(Math.max(1, Math.round(pendingVoice.durationMs / 1000)))}
+            Голосовое сообщение готово · {formatRecordingTime(Math.max(1, Math.round(pendingVoice.durationMs / 1000)))}
           </strong>
           <small className="voice-limit-hint">
-            Maximum {formatRecordingTime(Math.floor(voiceConstraints.max_duration_ms / 1000))} ·{" "}
+            Максимум {formatRecordingTime(Math.floor(voiceConstraints.max_duration_ms / 1000))} ·{" "}
             {formatFileSize(voiceConstraints.max_file_size_bytes)}
           </small>
           <button
@@ -729,10 +746,10 @@ export function ChatWindow({
             disabled={isProcessingVoice}
             onClick={discardPendingVoice}
           >
-            Cancel
+            Отмена
           </button>
           <button className="button" type="button" disabled={isProcessingVoice} onClick={sendPendingVoice}>
-            {voiceUploadFailed ? "Retry upload" : "Send voice"}
+            {voiceUploadFailed ? "Повторить загрузку" : "Отправить голосовое"}
           </button>
         </div>
       ) : (
@@ -741,7 +758,7 @@ export function ChatWindow({
             className="input"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Write a message"
+            placeholder="Напишите сообщение"
             disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
           />
           <button
@@ -750,18 +767,18 @@ export function ChatWindow({
             disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
             onClick={startVoiceRecording}
           >
-            Voice
+            Голос
           </button>
           <button
             className="button"
             type="submit"
             disabled={isSending || isProcessingVoice || voicePhase === "requesting_microphone" || Boolean(pendingPhotoRequest)}
           >
-            Send
+            Отправить
           </button>
           {PHOTO_REQUEST_PATTERN.test(draft) ? (
             <small className="photo-charge-hint">
-              Фото оплачивается с вашего баланса. Автоматических повторов нет.
+              Фото уменьшит доступный лимит аккаунта. Автоматических повторов нет.
             </small>
           ) : null}
         </form>
@@ -775,7 +792,7 @@ export function ChatWindow({
         onClose={() => setVideoDialog(null)}
         onCreated={() => { void loadHistory(); onAfterSend?.(); }}
       />}
-      {openedMedia && <ChatMediaViewer media={openedMedia} onClose={() => setOpenedMedia(null)} />}
+      {openedMedia && <ChatMediaViewer media={openedMedia} items={mediaItems} onNavigate={setOpenedMedia} onClose={() => setOpenedMedia(null)} />}
     </section>
   );
 }

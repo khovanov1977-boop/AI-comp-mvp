@@ -26,7 +26,7 @@ export function VoiceSelector({
   useEffect(() => {
     listVoiceOptions()
       .then(setVoices)
-      .catch(() => setError("Could not load the voice catalog."))
+      .catch(() => setError("Не удалось загрузить список голосов."))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -66,7 +66,7 @@ export function VoiceSelector({
         return URL.createObjectURL(blob);
       });
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not generate voice preview.");
+      setError(caughtError instanceof Error ? caughtError.message : "Не удалось создать пример голоса.");
     } finally {
       setIsPreviewing(false);
     }
@@ -86,14 +86,14 @@ export function VoiceSelector({
             onChange(event.target.value);
           }}
         >
-          <option value="">{isLoading ? "Loading voices..." : "Choose a voice"}</option>
+          <option value="">{isLoading ? "Загружаем голоса…" : "Выберите голос"}</option>
           {ageGroups.map((ageGroup) => (
             <optgroup key={ageGroup} label={`${ageGroup} лет`}>
               {filteredVoices
                 .filter((voice) => voice.age_group === ageGroup)
                 .map((voice) => (
                   <option key={voice.id} value={voice.id}>
-                    {voice.id} — {voice.description}
+                    {voice.display_name} — {voice.description}
                   </option>
                 ))}
             </optgroup>
@@ -105,7 +105,7 @@ export function VoiceSelector({
           disabled={disabled || !value || isPreviewing}
           onClick={playPreview}
         >
-          {isPreviewing ? "Generating..." : "Preview"}
+          {isPreviewing ? "Готовим…" : "Прослушать"}
         </button>
       </div>
       {previewUrl ? <audio className="voice-preview" src={previewUrl} controls autoPlay /> : null}

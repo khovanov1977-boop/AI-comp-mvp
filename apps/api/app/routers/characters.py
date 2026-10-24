@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -10,30 +10,32 @@ from app.models.memory import Memory
 from app.models.message import Message
 from app.models.scene_image import SceneImageJob
 from app.models.video import VideoJob
-from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterRead, CharacterUpdate
 from app.services.scene_service import DEFAULT_SCENE
 from app.services.time_context import infer_timezone
 from app.services.voice_storage import delete_character_voice_files
 from app.services.voice_catalog import is_supported_voice, is_voice_compatible
+from app.services.biography_variants import (
+    BiographyVariantRequest, BiographyVariantsError, BiographyVariantsRead, generate_biography_variants,
+)
 from app.services.image_generation import IMAGE_COMMIT_LOCK
 from app.services.image_storage import delete_character_image_files
+from app.services.relationship_state import INITIAL_RELATIONSHIP_STATE
+from app.security import current_user
 
 router = APIRouter(prefix="/characters", tags=["characters"])
 
-DEMO_USER_EMAIL = "demo@local"
-
-
-def get_or_create_demo_user(db: Session) -> User:
-    user = db.scalar(select(User).where(User.email == DEMO_USER_EMAIL))
-    if user:
-        return user
-    user = User(email=DEMO_USER_EMAIL, display_name="Demo User")
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
+@router.post("/biography-variants", response_model=BiographyVariantsRead)
+def create_biography_variants(
+    payload: BiographyVariantRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> BiographyVariantsRead:
+    current_user(request, db)
+    try:
+        return generate_biography_variants(payload)
+    except BiographyVariantsError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 def to_character_read(character: Character) -> CharacterRead:
     profile = character.profile
@@ -52,6 +54,7 @@ def to_character_read(character: Character) -> CharacterRead:
         dislikes=profile.dislikes if profile else "",
         language=profile.language if profile else "ru",
         user_nickname=profile.user_nickname if profile else "",
+        user_address_name=profile.user_address_name if profile else "",
         voice_id=profile.voice_id if profile and is_supported_voice(profile.voice_id) else "",
         response_length=profile.response_length if profile and profile.response_length in {"brief", "balanced", "detailed"} else "balanced",
         user_city=user.city if user else "",
@@ -69,12 +72,12 @@ def to_character_read(character: Character) -> CharacterRead:
 
 
 @router.post("", response_model=CharacterRead)
-def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) -> CharacterRead:
+def create_character(payload: CharacterCreate, request: Request, db: Session = Depends(get_db)) -> CharacterRead:
     if payload.voice_id and not is_supported_voice(payload.voice_id):
         raise HTTPException(status_code=422, detail="Unsupported character voice")
     if payload.voice_id and not is_voice_compatible(payload.voice_id, payload.gender):
         raise HTTPException(status_code=422, detail="Voice does not match character gender")
-    user = get_or_create_demo_user(db)
+    user = current_user(request, db)
     user.city = payload.user_city.strip()
     user.country = payload.user_country.strip()
     user.timezone = infer_timezone(user.city, user.country, payload.user_timezone.strip() or "Europe/Moscow")
@@ -95,6 +98,7 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         dislikes=payload.dislikes,
         language=payload.language,
         user_nickname=payload.user_nickname,
+        user_address_name=payload.user_address_name.strip(),
         voice_id=payload.voice_id,
         response_length=payload.response_length,
         warmth=payload.warmth,
@@ -104,7 +108,8 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
         emotionality=payload.emotionality,
         rationality=payload.rationality,
     )
-    character.state = CharacterState()
+    initial_trust, initial_attachment = INITIAL_RELATIONSHIP_STATE.get(payload.relationship_mode, (10, 5))
+    character.state = CharacterState(trust_level=initial_trust, attachment_level=initial_attachment)
     character.scene = CharacterScene(**DEFAULT_SCENE)
     db.add(character)
     db.commit()
@@ -113,8 +118,9 @@ def create_character(payload: CharacterCreate, db: Session = Depends(get_db)) ->
 
 
 @router.get("", response_model=list[CharacterRead])
-def list_characters(db: Session = Depends(get_db)) -> list[CharacterRead]:
-    characters = db.scalars(select(Character).order_by(Character.created_at.desc())).all()
+def list_characters(request: Request, db: Session = Depends(get_db)) -> list[CharacterRead]:
+    user = current_user(request, db)
+    characters = db.scalars(select(Character).where(Character.user_id == user.id).order_by(Character.created_at.desc())).all()
     return [to_character_read(character) for character in characters]
 
 
@@ -166,6 +172,19 @@ def update_character(
         profile.personality_description = payload.personality_description
     if payload.communication_style is not None:
         profile.communication_style = payload.communication_style
+    if payload.biography is not None:
+        profile.biography = payload.biography
+        profile.background_story = payload.biography
+    if payload.boundaries is not None:
+        profile.boundaries = payload.boundaries
+    if payload.likes is not None:
+        profile.likes = payload.likes
+    if payload.dislikes is not None:
+        profile.dislikes = payload.dislikes
+    if payload.language is not None:
+        profile.language = payload.language
+    if payload.user_address_name is not None:
+        profile.user_address_name = payload.user_address_name.strip()
     if payload.response_length is not None:
         profile.response_length = payload.response_length
     if payload.voice_id is not None:

@@ -4,33 +4,34 @@ from dataclasses import asdict, dataclass
 @dataclass(frozen=True)
 class VoiceOption:
     id: str
+    display_name: str
     gender: str
     age_group: str
     description: str
 
 
 VOICE_OPTIONS = (
-    VoiceOption("Leda", "female", "25-30", "молодой, лёгкий"),
-    VoiceOption("Sulafat", "female", "25-30", "мягкий, тёплый"),
-    VoiceOption("Achernar", "female", "25-30", "мягкий, спокойный"),
-    VoiceOption("Zephyr", "female", "25-30", "светлый, живой"),
-    VoiceOption("Erinome", "female", "30-35", "ясный, спокойный"),
-    VoiceOption("Aoede", "female", "30-35", "лёгкий, непринуждённый"),
-    VoiceOption("Despina", "female", "30-35", "плавный, мягкий"),
-    VoiceOption("Autonoe", "female", "35-40", "ясный, светлый"),
-    VoiceOption("Kore", "female", "35-40", "уверенный, собранный"),
-    VoiceOption("Vindemiatrix", "female", "35-40", "деликатный, мягкий"),
-    VoiceOption("Pulcherrima", "female", "40+", "прямой, выразительный"),
-    VoiceOption("Gacrux", "female", "40+", "зрелый, уверенный"),
-    VoiceOption("Rasalgethi", "male", "20-25", "молодой, спокойный"),
-    VoiceOption("Orus", "male", "25-30", "ровный, уверенный"),
-    VoiceOption("Zubenelgenubi", "male", "25-30", "неформальный, естественный"),
-    VoiceOption("Alnilam", "male", "30-35", "сдержанный, уверенный"),
-    VoiceOption("Sadaltager", "male", "35-40", "знающий, спокойный"),
-    VoiceOption("Umbriel", "male", "35-40", "мягкий, непринуждённый"),
-    VoiceOption("Enceladus", "male", "35-40", "тихий, с придыханием"),
-    VoiceOption("Iapetus", "male", "40+", "ясный, зрелый"),
-    VoiceOption("Sadachbia", "male", "40+", "живой, выразительный"),
+    VoiceOption("Leda", "Анна", "female", "25-30", "молодой, лёгкий"),
+    VoiceOption("Sulafat", "Мария", "female", "25-30", "мягкий, тёплый"),
+    VoiceOption("Achernar", "София", "female", "25-30", "мягкий, спокойный"),
+    VoiceOption("Zephyr", "Эмма", "female", "25-30", "светлый, живой"),
+    VoiceOption("Erinome", "Елена", "female", "30-35", "ясный, спокойный"),
+    VoiceOption("Aoede", "Лаура", "female", "30-35", "лёгкий, непринуждённый"),
+    VoiceOption("Despina", "Нина", "female", "30-35", "плавный, мягкий"),
+    VoiceOption("Autonoe", "Диана", "female", "35-40", "ясный, светлый"),
+    VoiceOption("Kore", "Виктория", "female", "35-40", "уверенный, собранный"),
+    VoiceOption("Vindemiatrix", "Оливия", "female", "35-40", "деликатный, мягкий"),
+    VoiceOption("Pulcherrima", "Наталья", "female", "40+", "прямой, выразительный"),
+    VoiceOption("Gacrux", "Ирина", "female", "40+", "зрелый, уверенный"),
+    VoiceOption("Rasalgethi", "Алекс", "male", "20-25", "молодой, спокойный"),
+    VoiceOption("Orus", "Марк", "male", "25-30", "ровный, уверенный"),
+    VoiceOption("Zubenelgenubi", "Даниэль", "male", "25-30", "неформальный, естественный"),
+    VoiceOption("Alnilam", "Андрей", "male", "30-35", "сдержанный, уверенный"),
+    VoiceOption("Sadaltager", "Михаил", "male", "35-40", "знающий, спокойный"),
+    VoiceOption("Umbriel", "Лео", "male", "35-40", "мягкий, непринуждённый"),
+    VoiceOption("Enceladus", "Томас", "male", "35-40", "тихий, с придыханием"),
+    VoiceOption("Iapetus", "Виктор", "male", "40+", "ясный, зрелый"),
+    VoiceOption("Sadachbia", "Макс", "male", "40+", "живой, выразительный"),
 )
 
 VOICE_BY_ID = {voice.id: voice for voice in VOICE_OPTIONS}

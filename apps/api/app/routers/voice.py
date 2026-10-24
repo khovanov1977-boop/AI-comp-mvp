@@ -130,6 +130,9 @@ def generate_voice_response(db: Session, character: Character, message: Message)
 
     try:
         reply, assistant_message, reply_plan = handle_existing_user_message(db, character, message)
+    except HTTPException:
+        db.rollback()
+        raise
     except LLMConfigurationError as exc:
         db.rollback()
         return voice_chat_response(

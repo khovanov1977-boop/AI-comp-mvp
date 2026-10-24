@@ -47,7 +47,7 @@ export function MessageBubble({
     return (
       <div className={`bubble ${message.role}`}>
         {message.image_url ? <div className="chat-image-wrap">
-          <button className="chat-image-open" type="button" onClick={() => onOpenMedia?.({ kind: "image", url: message.image_url })} aria-label="Открыть фото в полном размере">
+          <button className="chat-image-open" type="button" onClick={() => onOpenMedia?.({ id: message.id, kind: "image", url: message.image_url })} aria-label="Открыть фото в полном размере">
             <img className="chat-generated-image" src={getApiAssetUrl(message.image_url)} alt="Фото персонажа" />
           </button>
           {message.role === "assistant" && message.image_generation_status === "completed" && onAnimatePhoto ? (
@@ -67,7 +67,7 @@ export function MessageBubble({
           <button className="text-button" type="button" onClick={(event) => {
             const inlineVideo = event.currentTarget.previousElementSibling;
             if (inlineVideo instanceof HTMLVideoElement) inlineVideo.pause();
-            onOpenMedia?.({ kind: "video", url: message.video_url });
+            onOpenMedia?.({ id: message.id, kind: "video", url: message.video_url });
           }}>Открыть видео крупно</button>
         </> : null}
         <div>{publicErrorText(message.content)}</div>
@@ -99,7 +99,7 @@ export function MessageBubble({
             disabled={isVoiceReplyBusy}
             onClick={() => onRetryVoiceReply(message.id)}
           >
-            {isVoiceReplyBusy ? "Generating reply..." : "Retry reply"}
+            {isVoiceReplyBusy ? "Готовим ответ…" : "Повторить ответ"}
           </button>
         ) : null}
       </div>
@@ -110,7 +110,7 @@ export function MessageBubble({
       <span className="chat-message-text">{message.role === "assistant" ? renderAssistantText(message.content) : message.content}</span>
       {message.role === "assistant" && message.voice_generation_status === "failed" ? (
         <div className="voice-generation-error">
-          <small>{message.voice_generation_error ? publicErrorText(message.voice_generation_error) : "Could not generate voice audio."}</small>
+          <small>{message.voice_generation_error ? publicErrorText(message.voice_generation_error) : "Не удалось создать голосовой ответ."}</small>
         </div>
       ) : null}
       {message.role === "assistant" && message.voice_generation_can_retry && onRetryVoiceGeneration ? (
@@ -120,7 +120,7 @@ export function MessageBubble({
           disabled={retryingVoiceGenerationMessageId === message.id}
           onClick={() => onRetryVoiceGeneration(message.id)}
         >
-          {retryingVoiceGenerationMessageId === message.id ? "Generating voice..." : "Retry voice generation"}
+          {retryingVoiceGenerationMessageId === message.id ? "Готовим голос…" : "Повторить создание голоса"}
         </button>
       ) : null}
     </div>

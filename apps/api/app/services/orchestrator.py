@@ -10,6 +10,7 @@ from app.services.orchestrator_context import build_orchestrator_context
 from app.services.memory_service import remember_user_message
 from app.services.reply_renderer import normalize_character_reply, render_character_reply
 from app.services.voice_intent import should_generate_voice_reply
+from app.services.account_limits import reserve_account_units
 
 
 def generate_assistant_reply(
@@ -27,6 +28,8 @@ def generate_assistant_reply(
     )
     reply_plan = normalize_character_reply(get_llm_provider().generate_reply(context))
     reply = render_character_reply(reply_plan)
+    reserve_account_units(db, character.user_id,
+                          "voice_messages_count" if voice_reply_requested else "text_messages_count")
     outbound = Message(character_id=character.id, role="assistant", content=reply, message_type="text")
     db.add(outbound)
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import type { Character, CompanionContext } from "@ai-companion/shared";
+import type { Character, CharacterAppearance, CompanionContext } from "@ai-companion/shared";
 import type { Memory } from "@ai-companion/shared";
 import {
   clearChatHistory,
@@ -10,6 +10,8 @@ import {
   deleteCharacter,
   deleteMemory,
   exportChat,
+  getAppearance,
+  getApiAssetUrl,
   updateCharacter,
   updateMemory,
   updateScene,
@@ -18,27 +20,28 @@ import {
 import { PersonalityEqualizer, type PersonalityTraitKey } from "./PersonalityEqualizer";
 import { VoiceSelector } from "./VoiceSelector";
 import { AppearancePanel } from "./AppearancePanel";
+import { ChatMediaViewer } from "./ChatMediaViewer";
 
 const MEMORY_CATEGORIES: Array<{ value: Memory["memory_type"]; label: string }> = [
-  { value: "user_fact", label: "User facts" },
-  { value: "preference", label: "Preferences" },
-  { value: "life_event", label: "Life events" },
-  { value: "relationship_note", label: "Relationship notes" },
-  { value: "system_note", label: "System notes" },
+  { value: "user_fact", label: "Факты о вас" },
+  { value: "preference", label: "Предпочтения" },
+  { value: "life_event", label: "События" },
+  { value: "relationship_note", label: "Об отношениях" },
+  { value: "system_note", label: "Другие заметки" },
 ];
 
 const PRESENCE_MODES: Array<{ value: CompanionContext["scene_context"]["presence_mode"]; label: string }> = [
-  { value: "remote_chat", label: "Remote chat" },
-  { value: "same_place", label: "Same place" },
-  { value: "virtual_roleplay", label: "Virtual roleplay" },
+  { value: "remote_chat", label: "Общение на расстоянии" },
+  { value: "same_place", label: "Рядом друг с другом" },
+  { value: "virtual_roleplay", label: "Ролевая сцена" },
 ];
 
 const RELATIONSHIP_MODES = [
-  { value: "companion", label: "Companion" },
-  { value: "friend", label: "Friend" },
-  { value: "colleague", label: "Colleague" },
-  { value: "relative", label: "Relative" },
-  { value: "romantic", label: "Romantic" },
+  { value: "companion", label: "Собеседники" },
+  { value: "friend", label: "Друзья" },
+  { value: "colleague", label: "Коллеги" },
+  { value: "relative", label: "Родственники" },
+  { value: "romantic", label: "Романтические" },
 ];
 
 type CharacterSettingsDraft = Pick<
@@ -47,6 +50,12 @@ type CharacterSettingsDraft = Pick<
   | "relationship_mode"
   | "personality_description"
   | "communication_style"
+  | "biography"
+  | "boundaries"
+  | "likes"
+  | "dislikes"
+  | "language"
+  | "user_address_name"
   | "voice_id"
   | "response_length"
   | PersonalityTraitKey
@@ -58,6 +67,12 @@ function getCharacterSettingsDraft(character: Character): CharacterSettingsDraft
     relationship_mode: character.relationship_mode,
     personality_description: character.personality_description,
     communication_style: character.communication_style,
+    biography: character.biography,
+    boundaries: character.boundaries,
+    likes: character.likes,
+    dislikes: character.dislikes,
+    language: character.language,
+    user_address_name: character.user_address_name,
     voice_id: character.voice_id,
     response_length: character.response_length,
     warmth: character.warmth,
@@ -96,14 +111,13 @@ function getMoodLabel(mood: string) {
   return MOOD_LABELS[mood] ?? { label: "Ровное присутствие", description: "спокойный, живой контакт" };
 }
 
-function getLanguageLabel(language: string) {
-  if (language === "ru") {
-    return "Русский";
-  }
-  if (language === "en") {
-    return "English";
-  }
-  return language || "Not set";
+function displaySceneText(value: string) {
+  const defaults: Record<string, string> = {
+    "Private chat": "Личный чат",
+    "The user and character are chatting remotely from their own places.": "Вы и персонаж общаетесь на расстоянии, каждый из своего места.",
+    "at their own place": "У себя",
+  };
+  return defaults[value] ?? value;
 }
 
 function InfoHint({ label, text }: { label: string; text: string }) {
@@ -178,6 +192,30 @@ export function CompanionPanel({
   const [isManagingData, setIsManagingData] = useState(false);
   const [dataMessage, setDataMessage] = useState("");
   const [dataError, setDataError] = useState("");
+  const [appearance, setAppearance] = useState<CharacterAppearance | null>(null);
+  const [appearanceError, setAppearanceError] = useState(false);
+  const [portraitOpen, setPortraitOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setAppearance(null);
+    setAppearanceError(false);
+    setPortraitOpen(false);
+    getAppearance(character.id).then((value) => {
+      if (active) setAppearance(value);
+    }).catch(() => {
+      if (active) setAppearanceError(true);
+    });
+    return () => { active = false; };
+  }, [character.id]);
+
+  const selectedCandidate = (["clothing", "body", "face"] as const)
+    .map((stage) => appearance?.candidates.find((candidate) => candidate.id === appearance.selections[stage]))
+    .find(Boolean);
+  const publishedReference = appearance?.published && (appearance.published.references.clothing
+    ?? appearance.published.references.body ?? appearance.published.references.face);
+  const portraitUrl = selectedCandidate?.url ?? publishedReference?.url;
+  const portraitIsDraft = !!selectedCandidate && selectedCandidate.id !== publishedReference?.candidate_id;
 
   useEffect(() => {
     setSceneDraft(sceneContext ?? null);
@@ -203,7 +241,7 @@ export function CompanionPanel({
       const updatedCharacter = await updateCharacter(character.id, characterDraft);
       onCharacterChange(updatedCharacter);
     } catch {
-      setCharacterError("Could not update character settings.");
+      setCharacterError("Не удалось обновить настройки персонажа.");
     } finally {
       setIsSavingCharacter(false);
     }
@@ -228,7 +266,7 @@ export function CompanionPanel({
       setUserDraft(updatedUser);
       onMemoryChange();
     } catch {
-      setUserError("Could not update user profile.");
+      setUserError("Не удалось обновить профиль.");
     } finally {
       setIsSavingUser(false);
     }
@@ -240,7 +278,7 @@ export function CompanionPanel({
       await deleteMemory(memoryId);
       onMemoryChange();
     } catch {
-      setMemoryError("Could not delete memory.");
+      setMemoryError("Не удалось удалить воспоминание.");
     }
   }
 
@@ -262,9 +300,9 @@ export function CompanionPanel({
       link.click();
       link.remove();
       URL.revokeObjectURL(downloadUrl);
-      setDataMessage("Conversation export downloaded.");
+      setDataMessage("Переписка экспортирована.");
     } catch {
-      setDataError("Could not export conversation data.");
+      setDataError("Не удалось экспортировать переписку.");
     } finally {
       setIsManagingData(false);
     }
@@ -272,7 +310,7 @@ export function CompanionPanel({
 
   async function clearConversation() {
     const confirmed = window.confirm(
-      `Clear all chat messages with ${character.name}? Character settings, the current scene, and saved memories will be kept.`,
+      `Удалить всю переписку с ${character.name}? Настройки персонажа, текущая сцена и воспоминания сохранятся.`,
     );
     if (!confirmed) {
       return;
@@ -285,10 +323,10 @@ export function CompanionPanel({
       const result = await clearChatHistory(character.id);
       onHistoryCleared();
       setDataMessage(
-        `Cleared ${result.deleted_messages} messages. ${result.preserved_memories} saved memories were kept.`,
+        `Удалено сообщений: ${result.deleted_messages}. Сохранено воспоминаний: ${result.preserved_memories}.`,
       );
     } catch {
-      setDataError("Could not clear chat history.");
+      setDataError("Не удалось очистить переписку.");
     } finally {
       setIsManagingData(false);
     }
@@ -296,7 +334,7 @@ export function CompanionPanel({
 
   async function removeCharacter() {
     const confirmed = window.confirm(
-      `Permanently delete ${character.name}, including all messages, memories, scene data, and media records? This cannot be undone.`,
+      `Удалить персонажа ${character.name} вместе с перепиской, воспоминаниями, сценами и медиа? Это действие нельзя отменить.`,
     );
     if (!confirmed) {
       return;
@@ -309,7 +347,7 @@ export function CompanionPanel({
       await deleteCharacter(character.id);
       window.location.assign("/characters");
     } catch {
-      setDataError("Could not delete character.");
+      setDataError("Не удалось удалить персонажа.");
       setIsManagingData(false);
     }
   }
@@ -336,7 +374,7 @@ export function CompanionPanel({
 
     const content = editingMemoryContent.trim();
     if (!content) {
-      setMemoryError("Memory cannot be empty.");
+      setMemoryError("Воспоминание не может быть пустым.");
       return;
     }
 
@@ -351,7 +389,7 @@ export function CompanionPanel({
       cancelMemoryEdit();
       onMemoryChange();
     } catch {
-      setMemoryError("Could not update memory.");
+      setMemoryError("Не удалось обновить воспоминание.");
     } finally {
       setIsSavingMemory(false);
     }
@@ -376,7 +414,7 @@ export function CompanionPanel({
       setMemoryContent("");
       onMemoryChange();
     } catch {
-      setMemoryError("Could not save memory.");
+      setMemoryError("Не удалось сохранить воспоминание.");
     } finally {
       setIsSavingMemory(false);
     }
@@ -412,7 +450,7 @@ export function CompanionPanel({
       }
       onMemoryChange();
     } catch {
-      setSceneError("Could not update scene.");
+      setSceneError("Не удалось обновить сцену.");
     } finally {
       setIsSavingScene(false);
     }
@@ -425,7 +463,7 @@ export function CompanionPanel({
 
   async function startNewScene() {
     const confirmed = window.confirm(
-      "Start a new scene? Previous messages will stay visible, but they will no longer be used as active scene context.",
+      "Начать новую сцену? Прежние сообщения останутся в переписке, но не будут частью текущей сцены.",
     );
     if (!confirmed) {
       return;
@@ -434,49 +472,58 @@ export function CompanionPanel({
   }
 
   return (
-    <aside className="panel stack">
-      {contextError ? <p className="context-error">{contextError}</p> : null}
-      <section className="stack">
+    <aside className="panel companion-sidebar">
+      <section className="companion-sidebar-hero" aria-label={`Образ персонажа ${character.name}`}>
+        <div className="companion-sidebar-portrait">
+          {portraitUrl
+            ? <button className="companion-portrait-open" type="button" onClick={() => setPortraitOpen(true)} aria-label={`Увеличить образ персонажа ${character.name}`}>
+                <img src={getApiAssetUrl(portraitUrl)} alt={`Выбранный образ персонажа ${character.name}`} />
+                <span>Увеличить образ ↗</span>
+              </button>
+            : <span className="companion-sidebar-placeholder" aria-hidden="true">{character.name.slice(0, 1).toUpperCase()}</span>}
+        </div>
         <div>
           <h2 className="panel-title">{character.name}</h2>
-          <p className="muted">{character.relationship_mode}</p>
+          <p className="muted">{RELATIONSHIP_MODES.find((mode) => mode.value === character.relationship_mode)?.label || character.relationship_mode}</p>
         </div>
-        <p>{character.personality_description || "Personality details will appear here as the character develops."}</p>
-        {character.biography ? <p className="muted">{character.biography}</p> : null}
-        {character.likes ? <p className="muted">Likes: {character.likes}</p> : null}
-        {character.dislikes ? <p className="muted">Dislikes: {character.dislikes}</p> : null}
+        {portraitIsDraft ? <small className="muted">Выбранный вариант. Сохраните образ в настройках, чтобы применить его в чате.</small> : null}
+        {appearanceError ? <small className="muted">Не удалось загрузить изображение персонажа.</small> : null}
       </section>
 
-      <AppearancePanel key={character.id} character={character} onCharacterChange={onCharacterChange} />
-      <details className="character-settings">
-        <summary>Настройки персонажа</summary>
+      <div className="companion-menu">
+      {contextError ? <p className="context-error">{contextError}</p> : null}
+
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Настройки персонажа</span><small>Внешность, голос, биография и характер</small></summary>
+        <div className="companion-menu-content">
+        <AppearancePanel key={character.id} character={character} onCharacterChange={onCharacterChange} onAppearanceChange={(value) => { setAppearance(value); setAppearanceError(false); }} />
         <form className="character-settings-form" onSubmit={submitCharacterSettings}>
           <p className="muted">
-            These are base personality settings. Mood, trust, closeness, and energy continue to evolve during chat.
+            Измените описание персонажа, манеру общения и голос. Настроение, доверие, близость и ресурс меняются в ходе общения.
           </p>
           <label className="field">
-            <span className="label">Gender</span>
+            <span className="label">Пол</span>
             <select
               className="select"
               value={characterDraft.gender}
               disabled={isSavingCharacter}
               onChange={(event) => updateCharacterDraft("gender", event.target.value)}
             >
-              <option value="unspecified">Unspecified</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-              <option value="non_binary">Non-binary</option>
+              <option value="unspecified">Не указан</option>
+              <option value="female">Женский</option>
+              <option value="male">Мужской</option>
+              <option value="non_binary">Небинарный</option>
             </select>
           </label>
           <label className="field">
-            <span className="label">Relationship mode</span>
+            <span className="label">Ваши отношения</span>
             <select
               className="select"
               value={characterDraft.relationship_mode}
               disabled={isSavingCharacter}
               onChange={(event) => updateCharacterDraft("relationship_mode", event.target.value)}
             >
-              {characterDraft.relationship_mode === "mentor" ? <option value="mentor">Mentor (legacy)</option> : null}
+              {characterDraft.relationship_mode === "mentor" ? <option value="mentor">Наставник</option> : null}
               {RELATIONSHIP_MODES.map((mode) => (
                 <option key={mode.value} value={mode.value}>
                   {mode.label}
@@ -485,7 +532,7 @@ export function CompanionPanel({
             </select>
           </label>
           <label className="field">
-            <span className="label">Personality description</span>
+            <span className="label">Характер</span>
             <textarea
               className="textarea"
               value={characterDraft.personality_description}
@@ -494,12 +541,50 @@ export function CompanionPanel({
             />
           </label>
           <label className="field">
-            <span className="label">Communication style</span>
+            <span className="label">Стиль общения</span>
             <input
               className="input"
               value={characterDraft.communication_style}
               disabled={isSavingCharacter}
               onChange={(event) => updateCharacterDraft("communication_style", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="label">Биография</span>
+            <textarea className="textarea biography-textarea" value={characterDraft.biography} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("biography", event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Границы общения</span>
+            <textarea className="textarea" value={characterDraft.boundaries} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("boundaries", event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Что нравится</span>
+            <textarea className="textarea" value={characterDraft.likes} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("likes", event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Что не нравится</span>
+            <textarea className="textarea" value={characterDraft.dislikes} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("dislikes", event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Язык персонажа</span>
+            <select className="select" value={characterDraft.language} disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("language", event.target.value)}>
+              <option value="ru">Русский</option><option value="en">Английский</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="label">Как персонажу к вам обращаться</span>
+            <small className="muted">Имя или обращение для этого персонажа. Пустое поле использует имя для общения из вашего профиля, когда оно указано.</small>
+            <input
+              className="input"
+              value={characterDraft.user_address_name}
+              maxLength={80}
+              disabled={isSavingCharacter}
+              onChange={(event) => updateCharacterDraft("user_address_name", event.target.value)}
             />
           </label>
           <label className="field">
@@ -513,18 +598,18 @@ export function CompanionPanel({
             <small>Настройка влияет на новые ответы персонажа; прямую просьбу ответить короче или подробнее он учитывает отдельно.</small>
           </label>
           <div className="field">
-            <span className="label">Voice</span>
+            <span className="label">Голос</span>
             <VoiceSelector
               gender={characterDraft.gender}
               value={characterDraft.voice_id}
               disabled={isSavingCharacter}
               onChange={(voiceId) => updateCharacterDraft("voice_id", voiceId)}
             />
-            <small className="muted">Used when the character answers an incoming voice message.</small>
+            <small className="muted">Этот голос персонаж использует для ответа на голосовые сообщения.</small>
           </div>
           <div className="settings-subheading">
-            <strong>Personality equalizer</strong>
-            <small>50 is balanced.</small>
+            <strong>Черты характера</strong>
+            <small>Значение 50 — нейтральное.</small>
           </div>
           <PersonalityEqualizer
             values={characterDraft}
@@ -534,13 +619,15 @@ export function CompanionPanel({
           />
           {characterError ? <p className="muted">{characterError}</p> : null}
           <button className="button" type="submit" disabled={isSavingCharacter}>
-            {isSavingCharacter ? "Saving..." : "Save character settings"}
+            {isSavingCharacter ? "Сохраняем…" : "Сохранить настройки"}
           </button>
         </form>
+        </div>
       </details>
 
-      <section className="stack">
-        <h2 className="panel-title">Эмоциональное состояние</h2>
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Эмоциональное состояние</span><small>Настроение, доверие, близость и ресурс</small></summary>
+        <div className="companion-menu-content stack">
         {state ? (
           <>
             <div className="mood-row">
@@ -573,90 +660,61 @@ export function CompanionPanel({
         ) : (
           <p className="muted">Состояние загружается...</p>
         )}
-      </section>
+        </div>
+      </details>
 
-      <section className="stack">
-        <h2 className="panel-title">О пользователе</h2>
-        {userContext ? (
-          <div className="context-list">
-            <div>
-              <span>Name</span>
-              <strong>{userContext.preferred_name || userContext.display_name || "Not set"}</strong>
-            </div>
-            <div>
-              <span>Age</span>
-              <strong>{userContext.age ?? "Not set"}</strong>
-            </div>
-            <div>
-              <span>Location</span>
-              <strong>{[userContext.city, userContext.country].filter(Boolean).join(", ") || "Not set"}</strong>
-            </div>
-            <div>
-              <span>Timezone</span>
-              <strong>{userContext.timezone}</strong>
-            </div>
-            <div>
-              <span>Language</span>
-              <strong>{getLanguageLabel(userContext.language)}</strong>
-            </div>
-          </div>
-        ) : (
-          <p className="muted">Loading user context...</p>
-        )}
-      </section>
-
-      <details className="character-settings">
-        <summary>User profile</summary>
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Ваш профиль</span><small>Имя, обращение, возраст и другие сведения о вас</small></summary>
+        <div className="companion-menu-content">
         {userDraft ? (
           <form className="character-settings-form" onSubmit={submitUserProfile}>
             <p className="privacy-hint">
-              All fields are optional and shared across your characters. Leave anything blank if you do not want it
-              used in conversation.
+              Все поля необязательны и общие для ваших персонажей. Оставьте поле пустым, если не хотите использовать его в разговоре.
             </p>
             <label className="field">
-              <span className="label">Display name</span>
+              <span className="label">Имя в интерфейсе</span>
               <input
                 className="input"
                 value={userDraft.display_name}
                 disabled={isSavingUser}
                 onChange={(event) => updateUserDraft("display_name", event.target.value)}
               />
-              <small>Used in the interface. It is not automatically used as direct address.</small>
+              <small>Не используется автоматически как обращение персонажа к вам.</small>
             </label>
             <label className="field">
-              <span className="label">Formal name</span>
+              <span className="label">Полное имя</span>
               <input
                 className="input"
                 value={userDraft.formal_name}
                 disabled={isSavingUser}
-                placeholder="Example: Алексей"
+                placeholder="Например, Алексей"
                 onChange={(event) => updateUserDraft("formal_name", event.target.value)}
               />
             </label>
             <label className="field">
-              <span className="label">Preferred name</span>
+              <span className="label">Предпочитаемое имя</span>
               <input
                 className="input"
                 value={userDraft.preferred_name}
                 disabled={isSavingUser}
-                placeholder="Example: Лёша"
+                placeholder="Например, Лёша"
                 onChange={(event) => updateUserDraft("preferred_name", event.target.value)}
               />
-              <small>The default name when a character-specific override is not set.</small>
+              <small>Используется, если для персонажа не указано другое обращение.</small>
             </label>
             <label className="field">
-              <span className="label">Direct-address form</span>
+              <span className="label">Форма обращения</span>
               <input
                 className="input"
                 value={userDraft.vocative_name}
                 disabled={isSavingUser}
-                placeholder="Example: Лёш"
+                placeholder="Например, Лёш"
                 onChange={(event) => updateUserDraft("vocative_name", event.target.value)}
               />
-              <small>Used exactly as written when the character addresses you directly.</small>
+              <small>Персонаж будет обращаться к вам именно так, как здесь написано.</small>
             </label>
             <label className="field">
-              <span className="label">Age</span>
+              <span className="label">Возраст</span>
               <input
                 className="input"
                 type="number"
@@ -668,7 +726,7 @@ export function CompanionPanel({
               />
             </label>
             <label className="field">
-              <span className="label">City</span>
+              <span className="label">Город</span>
               <input
                 className="input"
                 value={userDraft.city}
@@ -677,7 +735,7 @@ export function CompanionPanel({
               />
             </label>
             <label className="field">
-              <span className="label">Country</span>
+              <span className="label">Страна</span>
               <input
                 className="input"
                 value={userDraft.country}
@@ -686,7 +744,7 @@ export function CompanionPanel({
               />
             </label>
             <label className="field">
-              <span className="label">Timezone</span>
+              <span className="label">Часовой пояс</span>
               <input
                 className="input"
                 value={userDraft.timezone}
@@ -696,33 +754,35 @@ export function CompanionPanel({
               />
             </label>
             <label className="field">
-              <span className="label">Language</span>
+              <span className="label">Язык</span>
               <select
                 className="select"
                 value={userDraft.language}
                 disabled={isSavingUser}
                 onChange={(event) => updateUserDraft("language", event.target.value)}
               >
-                <option value="ru">Russian</option>
-                <option value="en">English</option>
+                <option value="ru">Русский</option>
+                <option value="en">Английский</option>
               </select>
             </label>
             {userError ? <p className="muted">{userError}</p> : null}
             <button className="button" type="submit" disabled={isSavingUser}>
-              {isSavingUser ? "Saving..." : "Save user profile"}
+              {isSavingUser ? "Сохраняем…" : "Сохранить профиль"}
             </button>
           </form>
         ) : (
-          <p className="muted">Loading user profile...</p>
+          <p className="muted">Загружаем профиль…</p>
         )}
+        </div>
       </details>
 
-      <section className="stack">
-        <h2 className="panel-title">Scene</h2>
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Сцена</span><small>Место, время и формат общения</small></summary>
+        <div className="companion-menu-content">
         {sceneDraft ? (
           <form className="scene-form" onSubmit={submitScene}>
             <label className="field">
-              <span className="label">Presence mode</span>
+              <span className="label">Формат общения</span>
               <select
                 className="select"
                 value={sceneDraft.presence_mode}
@@ -742,104 +802,102 @@ export function CompanionPanel({
               </select>
             </label>
             <label className="field">
-              <span className="label">Location</span>
+              <span className="label">Место</span>
               <input
                 className="input"
-                value={sceneDraft.location_name}
+                value={displaySceneText(sceneDraft.location_name)}
                 disabled={isSavingScene}
                 onChange={(event) => updateSceneDraft("location_name", event.target.value)}
               />
             </label>
             <label className="field">
-              <span className="label">Scene description</span>
+              <span className="label">Описание сцены</span>
               <textarea
                 className="textarea"
-                value={sceneDraft.location_description}
+                value={displaySceneText(sceneDraft.location_description)}
                 disabled={isSavingScene}
                 onChange={(event) => updateSceneDraft("location_description", event.target.value)}
               />
             </label>
             <label className="field">
-              <span className="label">Scene time</span>
+              <span className="label">Время сцены</span>
               <input
                 className="input"
                 value={sceneDraft.time_description}
                 disabled={isSavingScene}
-                placeholder="Example: the next morning, three days later, Friday at 9:00"
+                placeholder="Например, следующее утро или пятница в 9:00"
                 onChange={(event) => updateSceneDraft("time_description", event.target.value)}
               />
-              <small>Optional. Keeps the story time stable even when it differs from the real clock.</small>
+              <small>Необязательно. Помогает сохранить время истории, даже если оно отличается от реального.</small>
             </label>
             <label className="field">
-              <span className="label">Your position</span>
+              <span className="label">Где вы</span>
               <input
                 className="input"
-                value={sceneDraft.user_position}
+                value={displaySceneText(sceneDraft.user_position)}
                 disabled={isSavingScene}
                 onChange={(event) => updateSceneDraft("user_position", event.target.value)}
               />
             </label>
             <label className="field">
-              <span className="label">Character position</span>
+              <span className="label">Где персонаж</span>
               <input
                 className="input"
-                value={sceneDraft.character_position}
+                value={displaySceneText(sceneDraft.character_position)}
                 disabled={isSavingScene}
                 onChange={(event) => updateSceneDraft("character_position", event.target.value)}
               />
             </label>
             <label className="field scene-memory-field">
-              <span className="label">What should be remembered from the current scene?</span>
+              <span className="label">Что запомнить из текущей сцены?</span>
               <textarea
                 className="textarea"
                 value={previousSceneSummary}
                 disabled={isSavingScene}
-                placeholder="Example: We went to the cinema together and watched The Matrix."
+                placeholder="Например, мы вместе сходили в кино."
                 onChange={(event) => setPreviousSceneSummary(event.target.value)}
               />
               <small>
-                Used only by Start new scene. If left blank, the previous scene description and its latest user messages are saved.
+                Используется при создании новой сцены. Если оставить пустым, сохранятся описание прошлой сцены и последние сообщения.
               </small>
             </label>
             {sceneError ? <p className="muted">{sceneError}</p> : null}
             <div className="scene-actions">
               <button className="button" type="submit" disabled={isSavingScene}>
-                {isSavingScene ? "Saving..." : "Update current scene"}
+                {isSavingScene ? "Сохраняем…" : "Обновить сцену"}
               </button>
               <button className="secondary-button" type="button" disabled={isSavingScene} onClick={startNewScene}>
-                Start new scene
+                Начать новую сцену
               </button>
             </div>
           </form>
         ) : (
-          <p className="muted">Loading scene...</p>
+          <p className="muted">Загружаем сцену…</p>
         )}
-      </section>
-
-      <details className="character-settings">
-        <summary>Roleplay format</summary>
-        <div className="stack">
-          <p className="muted">Optional notation for keeping speech, actions, thoughts, and technical notes distinct.</p>
-          <p><code>*action*</code> — a physical action</p>
-          <p><code>~thought~</code> — the writer&apos;s private thought</p>
-          <p><code>[scene: note]</code> — a detail compatible with the active scene</p>
-          <p><code>((OOC: note))</code> — an out-of-character note</p>
-          <small>
-            Plain text remains spoken dialogue. Scene notes do not replace Update current scene or Start new scene.
-          </small>
         </div>
       </details>
 
-      <section className="stack">
-        <h2 className="panel-title">Memory</h2>
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Формат ролевой игры</span><small>Как обозначать действия и мысли</small></summary>
+        <div className="companion-menu-content stack">
+          <p>В ответе персонажа реплика выглядит как обычный текст. Действие показывается курсивом: <em className="chat-action">Она улыбается.</em> Личная мысль — приглушённым курсивом: <em className="chat-thought">Надо быть честной.</em></p>
+          <p>Мысли появляются, если вы используете формат мыслей или прямо просите показать мысли персонажа. Заметки сцены тоже выделяются приглушённым курсивом, а ответ вне роли сохраняет пометку <code>((OOC: ...))</code>.</p>
+          <p className="muted">В своём сообщении можно использовать <code>*действие*</code>, <code>~мысль~</code>, <code>[scene: заметка]</code> или <code>((OOC: заметка))</code>. В ответе персонажа служебные символы действия, мысли и сцены скрываются оформлением.</p>
+          <small>Чтобы изменить место или время истории, откройте раздел «Сцена».</small>
+        </div>
+      </details>
+
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Память персонажа</span><small>{memoryMeta ? `${memoryMeta.total_count} воспоминаний` : "Сохранённые детали разговора"}</small></summary>
+        <div className="companion-menu-content stack">
         <div className="memory-summary">
           <p>
             {memoryMeta
-              ? `${memoryMeta.visible_count} of ${memoryMeta.total_count} saved memories shown`
-              : `${memories.length} saved memories shown`}
+              ? `Показано ${memoryMeta.visible_count} из ${memoryMeta.total_count} воспоминаний`
+              : `Показано воспоминаний: ${memories.length}`}
           </p>
           <small>
-            Auto memory is rule-based. The panel shows up to {memoryMeta?.visible_limit ?? 8} items by importance and recency.
+            Автоматическая память сохраняет важные детали по правилам. Здесь показано до {memoryMeta?.visible_limit ?? 8} записей.
           </small>
           {memoryMeta ? (
             <div className="memory-counts">
@@ -886,7 +944,7 @@ export function CompanionPanel({
                               onChange={(event) => setEditingMemoryContent(event.target.value)}
                             />
                             <label className="field">
-                              <span className="label">Importance</span>
+                              <span className="label">Важность</span>
                               <input
                                 className="input"
                                 type="number"
@@ -899,23 +957,23 @@ export function CompanionPanel({
                             </label>
                             <div className="memory-actions">
                               <button className="text-button" type="submit" disabled={isSavingMemory}>
-                                Save
+                                Сохранить
                               </button>
                               <button className="text-button" type="button" disabled={isSavingMemory} onClick={cancelMemoryEdit}>
-                                Cancel
+                                Отмена
                               </button>
                             </div>
                           </form>
                         ) : (
                           <>
                             <span>{memory.content}</span>
-                            <small className="memory-meta">Importance {memory.importance}</small>
+                            <small className="memory-meta">Важность: {memory.importance}</small>
                             <div className="memory-actions">
                               <button className="text-button" type="button" onClick={() => startMemoryEdit(memory)}>
-                                Edit
+                                Изменить
                               </button>
                               <button className="text-button" type="button" onClick={() => removeMemory(memory.id)}>
-                                Delete
+                                Удалить
                               </button>
                             </div>
                           </>
@@ -928,7 +986,7 @@ export function CompanionPanel({
             })}
           </div>
         ) : (
-          <p className="muted">No saved memories yet.</p>
+          <p className="muted">Пока нет сохранённых воспоминаний.</p>
         )}
         <form className="memory-form" onSubmit={submitMemory}>
           <select
@@ -946,26 +1004,27 @@ export function CompanionPanel({
             className="textarea"
             value={memoryContent}
             onChange={(event) => setMemoryContent(event.target.value)}
-            placeholder="Add memory"
+            placeholder="Добавьте воспоминание"
           />
           {memoryError ? <p className="muted">{memoryError}</p> : null}
           <button className="button" type="submit" disabled={isSavingMemory}>
-            {isSavingMemory ? "Saving..." : "Add memory"}
+            {isSavingMemory ? "Сохраняем…" : "Добавить воспоминание"}
           </button>
         </form>
-      </section>
+        </div>
+      </details>
 
-      <details className="character-settings">
-        <summary>Data &amp; conversation</summary>
-        <div className="data-controls">
-          <p className="muted">Export your data or permanently remove conversation data.</p>
+      <details className="companion-menu-item" name="companion-menu">
+        <summary><span>Данные и переписка</span><small>Экспорт и управление историей</small></summary>
+        <div className="companion-menu-content data-controls">
+          <p className="muted">Экспортируйте данные или удалите переписку.</p>
           <button
             className="secondary-button"
             type="button"
             disabled={isManagingData}
             onClick={downloadChatExport}
           >
-            Export conversation
+            Экспортировать переписку
           </button>
           <button
             className="secondary-button"
@@ -973,15 +1032,22 @@ export function CompanionPanel({
             disabled={isManagingData}
             onClick={clearConversation}
           >
-            Clear chat history
+            Очистить историю чата
           </button>
           <button className="danger-button" type="button" disabled={isManagingData} onClick={removeCharacter}>
-            Delete character and all data
+            Удалить персонажа и его данные
           </button>
           {dataMessage ? <p className="data-success">{dataMessage}</p> : null}
           {dataError ? <p className="chat-error">{dataError}</p> : null}
         </div>
       </details>
+      </div>
+      {portraitOpen && portraitUrl ? <ChatMediaViewer
+        media={{ id: `portrait-${character.id}`, kind: "image", url: portraitUrl }}
+        items={[{ id: `portrait-${character.id}`, kind: "image", url: portraitUrl }]}
+        onNavigate={() => undefined}
+        onClose={() => setPortraitOpen(false)}
+      /> : null}
     </aside>
   );
 }

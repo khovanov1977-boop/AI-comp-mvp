@@ -33,9 +33,11 @@ def provider_for_stage(stage: str, config: Settings = settings) -> str:
 def model_for_stage(stage: str, config: Settings = settings, provider_name: str | None = None) -> str:
     name = provider_name or config.image_provider
     if name == "hybrid":
-        return (config.venice_image_edit_model if stage == "clothing" else config.grok_image_model).strip()
+        return (config.venice_clothing_image_edit_model if stage == "clothing" else config.grok_image_model).strip()
     if name == "venice":
-        return (config.venice_image_model if stage == "face" else config.venice_image_edit_model).strip()
+        return (config.venice_image_model if stage == "face" else
+                config.venice_image_edit_model if stage == "body" else
+                config.venice_clothing_image_edit_model).strip()
     return config.image_model.strip()
 
 

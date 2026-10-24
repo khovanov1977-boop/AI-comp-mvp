@@ -42,7 +42,15 @@ def build_user_address_policy(
     formal_name: str,
     preferred_name: str,
     vocative_name: str,
+    character_address_name: str = "",
 ) -> UserAddressPolicy:
+    chosen = normalize_known_name(character_address_name)
+    if chosen:
+        return UserAddressPolicy(
+            default_name=chosen,
+            direct_address_name=chosen,
+            policy="chosen_for_character",
+        )
     formal = normalize_known_name(formal_name)
     preferred = normalize_known_name(preferred_name)
     vocative = normalize_known_name(vocative_name)

@@ -17,6 +17,7 @@ class CharacterCreate(BaseModel):
     dislikes: str = ""
     language: str = "ru"
     user_nickname: str = ""
+    user_address_name: str = Field(default="", max_length=80)
     voice_id: str = ""
     response_length: Literal["brief", "balanced", "detailed"] = "balanced"
     user_city: str = ""
@@ -47,6 +48,7 @@ class CharacterRead(BaseModel):
     dislikes: str
     language: str
     user_nickname: str
+    user_address_name: str
     voice_id: str
     response_length: Literal["brief", "balanced", "detailed"]
     user_city: str
@@ -67,6 +69,12 @@ class CharacterUpdate(BaseModel):
     relationship_mode: str | None = None
     personality_description: str | None = None
     communication_style: str | None = None
+    biography: str | None = None
+    boundaries: str | None = None
+    likes: str | None = None
+    dislikes: str | None = None
+    language: str | None = None
+    user_address_name: str | None = Field(default=None, max_length=80)
     voice_id: str | None = None
     response_length: Literal["brief", "balanced", "detailed"] | None = None
     warmth: int | None = Field(default=None, ge=0, le=100)

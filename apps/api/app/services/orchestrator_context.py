@@ -57,6 +57,7 @@ def build_orchestrator_context(
         user.formal_name if user else "",
         user.preferred_name if user else "",
         user.vocative_name if user else "",
+        profile.user_address_name if profile else "",
     )
 
     recent_message_query = (

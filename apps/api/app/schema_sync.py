@@ -12,6 +12,7 @@ PROFILE_COLUMNS = {
     "dislikes": "TEXT NOT NULL DEFAULT ''",
     "language": "VARCHAR NOT NULL DEFAULT 'ru'",
     "user_nickname": "VARCHAR NOT NULL DEFAULT ''",
+    "user_address_name": "VARCHAR NOT NULL DEFAULT ''",
     "warmth": "INTEGER NOT NULL DEFAULT 50",
     "initiative": "INTEGER NOT NULL DEFAULT 50",
     "playfulness": "INTEGER NOT NULL DEFAULT 50",
@@ -21,6 +22,7 @@ PROFILE_COLUMNS = {
 }
 
 USER_COLUMNS = {
+    "password_hash": "VARCHAR NULL",
     "formal_name": "VARCHAR NOT NULL DEFAULT ''",
     "preferred_name": "VARCHAR NOT NULL DEFAULT ''",
     "casual_name": "VARCHAR NOT NULL DEFAULT ''",
